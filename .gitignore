@@ -1,8 +1,12 @@
-/config/*
-/logs/*
 /node_modules
+/eslint-cache
+/chat-plugins/private.js
+/chat-plugins/*-private.js
 npm-debug.log
-/config/bannedwords.txt
+.eslintcache
+
+# visual studio live share
+.vs
 
 # boilerplate #
 ###############
@@ -11,6 +15,7 @@ npm-debug.log
 
 # editor temp files
 *~
+.idea/
 
 tmp/**/*
 *.lock

@@ -1,34 +1,70 @@
-exports.BattleAbilities = {
+'use strict';
+
+/**@type {{[k: string]: ModdedAbilityData}} */
+let BattleAbilities = {
 	"frisk": {
 		inherit: true,
-		onStart: function(pokemon) {
-			var target = pokemon.side.foe.randomActive();
+		shortDesc: "On switch-in, this Pokemon identifies a random foe's held item.",
+		onStart: function (pokemon) {
+			let target = pokemon.side.foe.randomActive();
 			if (target && target.item) {
-				this.add('-item', target, target.getItem().name, '[from] ability: Frisk', '[of] '+pokemon);
+				this.add('-item', target, target.getItem().name, '[from] ability: Frisk', '[of] ' + pokemon);
 			}
-		}
+		},
+	},
+	"infiltrator": {
+		inherit: true,
+		desc: "This Pokemon's moves ignore the opposing side's Reflect, Light Screen, Safeguard, and Mist.",
+		shortDesc: "This Pokemon's moves ignore the foe's Reflect, Light Screen, Safeguard, and Mist.",
 	},
 	"keeneye": {
 		inherit: true,
-		onModifyMove: function() {}
+		desc: "Prevents other Pokemon from lowering this Pokemon's accuracy stat stage.",
+		shortDesc: "Prevents other Pokemon from lowering this Pokemon's accuracy stat stage.",
+		onModifyMove: function () {},
 	},
 	"oblivious": {
 		inherit: true,
-		onUpdate: function(pokemon) {
+		desc: "This Pokemon cannot be infatuated. Gaining this Ability while infatuated cures it.",
+		shortDesc: "This Pokemon cannot be infatuated. Gaining this Ability while infatuated cures it.",
+		onUpdate: function (pokemon) {
 			if (pokemon.volatiles['attract']) {
 				pokemon.removeVolatile('attract');
-				this.add("-message", pokemon.name+" got over its infatuation. (placeholder)");
+				this.add('-end', pokemon, 'move: Attract', '[from] ability: Oblivious');
 			}
 		},
-		onTryHit: function(pokemon, target, move) {
+		onTryHit: function (pokemon, target, move) {
 			if (move.id === 'captivate') {
 				this.add('-immune', pokemon, '[msg]', '[from] Oblivious');
 				return null;
 			}
-		}
+		},
 	},
 	"overcoat": {
 		inherit: true,
-		onTryHit: function() {}
-	}
+		shortDesc: "This Pokemon is immune to damage from Sandstorm or Hail.",
+		onTryHit: function () {},
+	},
+	"sapsipper": {
+		inherit: true,
+		onAllyTryHitSide: function () {},
+	},
+	"serenegrace": {
+		inherit: true,
+		onModifyMove: function (move) {
+			if (move.secondaries && move.id !== 'secretpower') {
+				this.debug('doubling secondary chance');
+				for (const secondary of move.secondaries) {
+					if (secondary.chance) secondary.chance *= 2;
+				}
+			}
+		},
+	},
+	"soundproof": {
+		inherit: true,
+		shortDesc: "This Pokemon is immune to sound-based moves, except Heal Bell.",
+		onAllyTryHitSide: function () {},
+	},
 };
+
+exports.BattleAbilities = BattleAbilities;

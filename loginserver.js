@@ -7,222 +7,228 @@
  * @license MIT license
  */
 
-const LOGIN_SERVER_TIMEOUT = 15000;
+'use strict';
+
+const LOGIN_SERVER_TIMEOUT = 30000;
 const LOGIN_SERVER_BATCH_TIME = 1000;
 
-module.exports = (function() {
-	var http = require("http");
-	var url = require('url');
+const http = Config.loginserver.startsWith('http:') ? require("http") : require("https");
+const url = require('url');
 
-	function LoginServer(uri) {
-		console.log('Creating LoginServer object for ' + uri + '...');
-		this.uri = uri;
+const FS = require('./lib/fs');
+const Streams = require('./lib/streams');
+
+/**
+ * A custom error type used when requests to the login server take too long.
+ */
+class TimeoutError extends Error {}
+TimeoutError.prototype.name = TimeoutError.name;
+
+function parseJSON(/** @type {string} */ json) {
+	if (json.startsWith(']')) json = json.substr(1);
+	/**@type {{error: Error | null, json?: any}} */
+	let data = {error: null};
+	try {
+		data.json = JSON.parse(json);
+	} catch (err) {
+		data.error = err;
+	}
+	return data;
+}
+
+/** @typedef {[AnyObject?, number, Error?]} LoginServerResponse */
+
+class LoginServerInstance {
+	constructor() {
+		this.uri = Config.loginserver;
+		/**
+		 * @type {[AnyObject, (val: LoginServerResponse) => void][]}
+		 */
 		this.requestQueue = [];
-		LoginServer.loginServers[this.uri] = this;
+
+		this.requestTimer = null;
+		/** @type {string} */
+		this.requestLog = '';
+		this.lastRequest = 0;
+		this.openRequests = 0;
+		this.disabled = false;
 	}
 
-	// "static" mapping of URIs to LoginServer objects
-	LoginServer.loginServers = {};
-
-	// "static" flag
-	LoginServer.disabled = false;
-
-	LoginServer.prototype.requestTimer = null;
-	LoginServer.prototype.requestTimeoutTimer = null;
-	LoginServer.prototype.requestLog = '';
-	LoginServer.prototype.lastRequest = 0;
-	LoginServer.prototype.openRequests = 0;
-
-	var getLoginServer = function(action) {
-		var uri;
-		if (config.loginservers) {
-			uri = config.loginservers[action] || config.loginservers[null];
-		} else {
-			uri = config.loginserver;
-		}
-		if (!uri) {
-			console.log('ERROR: No login server specified for action: ' + action);
-			return;
-		}
-		return LoginServer.loginServers[uri] || new LoginServer(uri);
-	};
-	LoginServer.instantRequest = function(action, data, callback) {
-		return getLoginServer(action).instantRequest(action, data, callback);
-	};
-	LoginServer.request = function(action, data, callback) {
-		return getLoginServer(action).request(action, data, callback);
-	};
-
-	var parseJSON = function(json) {
-		if (json[0] === ']') json = json.substr(1);
-		return JSON.parse(json);
-	};
-
-	LoginServer.prototype.instantRequest = function(action, data, callback) {
-		if (typeof data === 'function') {
-			callback = data;
-			data = null;
-		}
+	/**
+	 * @param {string} action
+	 * @param {AnyObject?} data
+	 * @return {Promise<LoginServerResponse>}
+	 */
+	instantRequest(action, data = null) {
 		if (this.openRequests > 5) {
-			callback(null, null, 'overflow');
-			return;
+			return Promise.resolve(/** @type {LoginServerResponse} */ (
+				[null, 0, new RangeError("Request overflow")]
+			));
 		}
 		this.openRequests++;
-		var dataString = '';
+		let dataString = '';
 		if (data) {
-			for (var i in data) {
-				dataString += '&'+i+'='+encodeURIComponent(''+data[i]);
+			for (let i in data) {
+				dataString += '&' + i + '=' + encodeURIComponent('' + data[i]);
 			}
 		}
-		var req = http.get(url.parse(this.uri+'action.php?act='+action+'&serverid='+config.serverid+'&servertoken='+config.servertoken+'&nocache='+new Date().getTime()+dataString), function(res) {
-			var buffer = '';
-			res.setEncoding('utf8');
-
-			res.on('data', function(chunk) {
-				buffer += chunk;
+		const urlObject = url.parse(this.uri + 'action.php?act=' + action + '&serverid=' + Config.serverid + '&servertoken=' + encodeURIComponent(Config.servertoken) + '&nocache=' + new Date().getTime() + dataString);
+		return new Promise((resolve, reject) => {
+			// @ts-ignore TypeScript bug: http.get signature
+			let req = http.get(urlObject, res => {
+				Streams.readAll(res).then(buffer => {
+					let data = parseJSON(buffer).json || null;
+					resolve([data, res.statusCode, null]);
+					this.openRequests--;
+				});
 			});
 
-			res.on('end', function() {
-				var data = null;
-				try {
-					var data = parseJSON(buffer);
-				} catch (e) {}
-				callback(data, res.statusCode);
+			req.on('error', (/** @type {Error} */ error) => {
+				resolve([null, 0, error]);
 				this.openRequests--;
 			});
-		});
 
-		req.on('error', function(error) {
-			callback(null, null, error);
-			this.openRequests--;
+			req.end();
 		});
+	}
+	/**
+	 * @param {string} action
+	 * @param {AnyObject?} data
+	 * @return {Promise<LoginServerResponse>}
+	 */
+	request(action, data = null) {
+		if (this.disabled) {
+			return Promise.resolve(/** @type {LoginServerResponse} */ (
+				[null, 0, new Error(`Login server connection disabled.`)]
+			));
+		}
 
-		req.end();
-	};
-	LoginServer.prototype.request = function(action, data, callback) {
-		if (typeof data === 'function') {
-			callback = data;
-			data = null;
+		// ladderupdate and mmr are the most common actions
+		// prepreplay is also common
+		// @ts-ignore
+		if (this[action + 'Server']) {
+			// @ts-ignore
+			return this[action + 'Server'].request(action, data);
 		}
-		if (LoginServer.disabled) {
-			callback(null, null, 'disabled');
-			return;
-		}
-		if (!data) data = {};
-		data.act = action;
-		data.callback = callback;
-		this.requestQueue.push(data);
-		this.requestTimerPoke();
-	};
-	LoginServer.prototype.requestTimerPoke = function() {
+
+		let actionData = data || {};
+		actionData.act = action;
+		return new Promise(resolve => {
+			this.requestQueue.push([actionData, resolve]);
+			this.requestTimerPoke();
+		});
+	}
+	requestTimerPoke() {
 		// "poke" the request timer, i.e. make sure it knows it should make
 		// a request soon
 
 		// if we already have it going or the request queue is empty no need to do anything
 		if (this.openRequests || this.requestTimer || !this.requestQueue.length) return;
 
-		this.requestTimer = setTimeout(this.makeRequests.bind(this), LOGIN_SERVER_BATCH_TIME);
-	};
-	LoginServer.prototype.makeRequests = function() {
+		this.requestTimer = setTimeout(() => this.makeRequests(), LOGIN_SERVER_BATCH_TIME);
+	}
+	makeRequests() {
 		this.requestTimer = null;
-		var self = this;
-		var requests = this.requestQueue;
+		let requests = this.requestQueue;
 		this.requestQueue = [];
 
 		if (!requests.length) return;
 
-		var requestCallbacks = [];
-		for (var i=0,len=requests.length; i<len; i++) {
-			var request = requests[i];
-			requestCallbacks[i] = request.callback;
-			delete request.callback;
+		/** @type {((val: LoginServerResponse) => void)[]} */
+		let resolvers = [];
+		let dataList = [];
+		for (const [data, resolve] of requests) {
+			resolvers.push(resolve);
+			dataList.push(data);
 		}
 
 		this.requestStart(requests.length);
-		var postData = 'serverid='+config.serverid+'&servertoken='+config.servertoken+'&nocache='+new Date().getTime()+'&json='+encodeURIComponent(JSON.stringify(requests))+'\n';
-		var requestOptions = url.parse(this.uri+'action.php');
+		let postData = 'serverid=' + Config.serverid +
+			'&servertoken=' + encodeURIComponent(Config.servertoken) +
+			'&nocache=' + new Date().getTime() +
+			'&json=' + encodeURIComponent(JSON.stringify(dataList)) + '\n';
+		/** @type {any} */
+		let requestOptions = url.parse(this.uri + 'action.php');
 		requestOptions.method = 'post';
 		requestOptions.headers = {
 			'Content-Type': 'application/x-www-form-urlencoded',
-			'Content-Length': postData.length
+			'Content-Length': postData.length,
 		};
 
-		var req = null;
-		var reqError = function(error) {
-			if (self.requestTimeoutTimer) {
-				clearTimeout(self.requestTimeoutTimer);
-				self.requestTimeoutTimer = null;
-			}
-			req.abort();
-			for (var i=0,len=requestCallbacks.length; i<len; i++) {
-				requestCallbacks[i](null, null, error);
-			}
-			self.requestEnd();
-		};
-
-		self.requestTimeoutTimer = setTimeout(function() {
-			reqError('timeout');
-		}, LOGIN_SERVER_TIMEOUT);
-
-		req = http.request(requestOptions, function(res) {
-			if (self.requestTimeoutTimer) {
-				clearTimeout(self.requestTimeoutTimer);
-				self.requestTimeoutTimer = null;
-			}
-			var buffer = '';
-			res.setEncoding('utf8');
-
-			res.on('data', function(chunk) {
-				buffer += chunk;
-			});
-
-			var endReq = function() {
-				if (self.requestTimeoutTimer) {
-					clearTimeout(self.requestTimeoutTimer);
-					self.requestTimeoutTimer = null;
+		/** @type {any} */
+		let response = null;
+		// @ts-ignore
+		let req = http.request(requestOptions, res => {
+			response = res;
+			Streams.readAll(res).then(buffer => {
+				//console.log('RESPONSE: ' + buffer);
+				let data = parseJSON(buffer).json;
+				if (buffer.startsWith(`[{"actionsuccess":true,`)) {
+					buffer = 'stream interrupt';
 				}
-				//console.log('RESPONSE: '+buffer);
-				var data = null;
-				try {
-					var data = parseJSON(buffer);
-				} catch (e) {}
-				for (var i=0,len=requestCallbacks.length; i<len; i++) {
+				for (const [i, resolve] of resolvers.entries()) {
 					if (data) {
-						requestCallbacks[i](data[i], res.statusCode);
+						resolve([data[i], res.statusCode, null]);
 					} else {
-						requestCallbacks[i](null, res.statusCode, 'corruption');
+						resolve([null, res.statusCode, new Error(buffer)]);
 					}
 				}
-				self.requestEnd();
-			}.once();
-			res.on('end', endReq);
-			res.on('close', endReq);
-
-			self.requestTimeoutTimer = setTimeout(function(){
-				if (res.connection) res.connection.destroy();
-				endReq();
-			}, LOGIN_SERVER_TIMEOUT);
+				this.requestEnd();
+			});
 		});
 
-		req.on('error', reqError);
+		req.on('close', () => {
+			if (response) return;
+			const error = new TimeoutError("Response not received");
+			for (const resolve of resolvers) {
+				resolve([null, 0, error]);
+			}
+			this.requestEnd(error);
+		});
+
+		req.on('error', (/** @type {Error} */ error) => {
+			// ignore; will be handled by the 'close' handler
+		});
+
+		req.setTimeout(LOGIN_SERVER_TIMEOUT, () => {
+			req.abort();
+		});
 
 		req.write(postData);
 		req.end();
-	};
-	LoginServer.prototype.requestStart = function(size) {
+	}
+	requestStart(/** @type {number} */ size) {
 		this.lastRequest = Date.now();
-		this.requestLog += ' | '+size+' requests: ';
+		this.requestLog += ' | ' + size + ' rqs: ';
 		this.openRequests++;
-	};
-	LoginServer.prototype.requestEnd = function() {
+	}
+	requestEnd(/** @type {Error?} */ error) {
 		this.openRequests = 0;
-		this.requestLog += ''+(Date.now() - this.lastRequest).duration();
+		if (error && error instanceof TimeoutError) {
+			this.requestLog += 'TIMEOUT';
+		} else {
+			this.requestLog += '' + ((Date.now() - this.lastRequest) / 1000) + 's';
+		}
 		this.requestLog = this.requestLog.substr(-1000);
 		this.requestTimerPoke();
-	};
-	LoginServer.prototype.getLog = function() {
-		return this.requestLog + (this.lastRequest?' ('+(Date.now() - this.lastRequest).duration()+' since last request)':'');
-	};
+	}
+	getLog() {
+		return this.requestLog + (this.lastRequest ? ' (' + Chat.toDurationString(Date.now() - this.lastRequest) + ' since last request)' : '');
+	}
+}
 
-	return LoginServer;
-})();
+let LoginServer = Object.assign(new LoginServerInstance(), {
+	TimeoutError,
+
+	ladderupdateServer: new LoginServerInstance(),
+	prepreplayServer: new LoginServerInstance(),
+});
+
+FS('./config/custom.css').onModify(() => {
+	LoginServer.request('invalidatecss');
+});
+if (!Config.nofswriting) {
+	LoginServer.request('invalidatecss');
+}
+
+module.exports = LoginServer;

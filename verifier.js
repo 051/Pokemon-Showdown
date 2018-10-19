@@ -9,55 +9,55 @@
  * I wrote this one day hoping it would help with performance, but
  * I don't think it had any noticeable effect.
  *
- * @license MIT license
+ * @license MIT
  */
 
-// Because I don't want two files, we're going to fork ourselves.
+'use strict';
 
-if (!process.send) {
+const crypto = require('crypto');
 
-	// This is the parent
+/*********************************************************
+ * Process manager
+ *********************************************************/
 
-	var guid = 1;
-	var callbacks = {};
-	var callbackData = {};
+const QueryProcessManager = require('./lib/process-manager').QueryProcessManager;
 
-	var child = require('child_process').fork('verifier.js');
-	exports.verify = function(data, signature, callback) {
-		var localGuid = guid++;
-		callbacks[localGuid] = callback;
-		callbackData[localGuid] = data;
-		child.send({data: data, sig: signature, guid: localGuid});
-	}
-	child.on('message', function(response) {
-		if (callbacks[response.guid]) {
-			callbacks[response.guid](response.success, callbackData[response.guid]);
-			delete callbacks[response.guid];
-			delete callbackData[response.guid];
-		}
-	});
+/**@type {QueryProcessManager} */
+// @ts-ignore
+const PM = new QueryProcessManager(module, async ({data, signature}) => {
+	let verifier = crypto.createVerify(Config.loginserverkeyalgo);
+	verifier.update(data);
+	let success = false;
+	try {
+		success = verifier.verify(Config.loginserverpublickey, signature, 'hex');
+	} catch (e) {}
 
+	return success;
+});
+
+if (!PM.isParentProcess) {
+	// This is a child process!
+	// @ts-ignore This file doesn't exist on the repository, so Travis checks fail if this isn't ignored
+	global.Config = require('./config/config');
+	require('./lib/repl').start('verifier', /** @param {string} cmd */ cmd => eval(cmd));
 } else {
-
-	// This is the child
-
-	var config = require('./config/config.js');
-	var crypto = require('crypto');
-
-	var keyalgo = config.loginserverkeyalgo;
-	var pkey = config.loginserverpublickey;
-
-	process.on('message', function(message) {
-		var verifier = crypto.createVerify(keyalgo);
-		verifier.update(message.data);
-		var success = false;
-		try {
-			success = verifier.verify(pkey, message.sig, 'hex');
-		} catch (e) {}
-		process.send({
-			success: success,
-			guid: message.guid
-		});
-	});
-
+	PM.spawn(global.Config ? Config.verifierprocesses : 1);
 }
+
+/*********************************************************
+ * Exports
+ *********************************************************/
+
+/**
+ * @param {string} data
+ * @param {string} signature
+ * @return {Promise<boolean>}
+ */
+function verify(data, signature) {
+	return PM.query({data, signature});
+}
+
+module.exports = {
+	verify,
+	PM,
+};

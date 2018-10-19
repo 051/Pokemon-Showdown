@@ -1,12 +1,15 @@
-exports.BattleMovedex = {
+'use strict';
+
+/**@type {{[k: string]: ModdedMoveData}} */
+let BattleMovedex = {
 	/******************************************************************
 	Perfect accuracy moves:
-	- base power increased 60 to 90
+	- base power increased to 90
 
 	Justification:
 	- perfect accuracy is too underpowered to have such low base power
 	- it's not even an adequate counter to accuracy boosting, which
-	  is why the latter is banned
+	  is why the latter is banned in OU
 
 	Precedent:
 	- Giga Drain and Drain Punch, similar 60 base power moves, have
@@ -14,31 +17,43 @@ exports.BattleMovedex = {
 	******************************************************************/
 	aerialace: {
 		inherit: true,
-		basePower: 90
+		basePower: 90,
 	},
 	feintattack: {
 		inherit: true,
-		basePower: 90
+		basePower: 90,
 	},
 	shadowpunch: {
 		inherit: true,
-		basePower: 90
+		basePower: 90,
 	},
 	magnetbomb: {
 		inherit: true,
-		basePower: 90
+		basePower: 90,
 	},
 	magicalleaf: {
 		inherit: true,
-		basePower: 90
+		basePower: 90,
 	},
 	shockwave: {
 		inherit: true,
-		basePower: 90
+		basePower: 90,
 	},
 	swift: {
 		inherit: true,
-		basePower: 90
+		basePower: 90,
+	},
+	disarmingvoice: {
+		inherit: true,
+		basePower: 90,
+	},
+	aurasphere: {
+		inherit: true,
+		basePower: 90,
+	},
+	clearsmog: {
+		inherit: true,
+		basePower: 90,
 	},
 	/******************************************************************
 	HMs:
@@ -56,19 +71,24 @@ exports.BattleMovedex = {
 			chance: 30,
 			self: {
 				boosts: {
-					atk: 1
-				}
-			}
-		}
+					atk: 1,
+				},
+			},
+		},
+		shortDesc: "30% chance of raising user's Atk by 1 stage.",
+		desc: "This move has a 30% chance of raising the user's Attack by one stage.",
 	},
 	cut: {
 		inherit: true,
+		accuracy: 100,
 		secondary: {
 			chance: 100,
 			boosts: {
-				def: -1
-			}
-		}
+				def: -1,
+			},
+		},
+		desc: "100% chance of lowering the target's Defense by one stage.",
+		shortDesc: "Lowers the target's Def by 1 stage.",
 	},
 	rocksmash: {
 		inherit: true,
@@ -76,9 +96,11 @@ exports.BattleMovedex = {
 		secondary: {
 			chance: 100,
 			boosts: {
-				def: -1
-			}
-		}
+				def: -1,
+			},
+		},
+		desc: "100% chance of lowering the target's Defense by one stage.",
+		shortDesc: "Lowers the target's Def by 1 stage.",
 	},
 	/******************************************************************
 	Weather moves:
@@ -90,19 +112,19 @@ exports.BattleMovedex = {
 	******************************************************************/
 	raindance: {
 		inherit: true,
-		priority: 1
+		priority: 1,
 	},
 	sunnyday: {
 		inherit: true,
-		priority: 1
+		priority: 1,
 	},
 	sandstorm: {
 		inherit: true,
-		priority: 1
+		priority: 1,
 	},
 	hail: {
 		inherit: true,
-		priority: 1
+		priority: 1,
 	},
 	/******************************************************************
 	Substitute:
@@ -120,34 +142,21 @@ exports.BattleMovedex = {
 	substitute: {
 		inherit: true,
 		effect: {
-			onStart: function(target) {
+			onStart: function (target) {
 				this.add('-start', target, 'Substitute');
-				this.effectData.hp = Math.floor(target.maxhp/4);
+				this.effectData.hp = Math.floor(target.maxhp / 4);
 				delete target.volatiles['partiallytrapped'];
 			},
 			onAccuracyPriority: -100,
-			onAccuracy: function(accuracy, target, source, move) {
+			onAccuracy: function (accuracy, target, source, move) {
 				return 100;
 			},
 			onTryPrimaryHitPriority: 2,
-			onTryPrimaryHit: function(target, source, move) {
-				if (target === source) {
-					this.debug('sub bypass: self hit');
+			onTryPrimaryHit: function (target, source, move) {
+				if (target === source || move.flags['authentic'] || move.infiltrates) {
 					return;
 				}
-				if (move.category === 'Status') {
-					if (move.notSubBlocked) {
-						return;
-					}
-					var SubBlocked = {
-						block:1, embargo:1, entrainment:1, gastroacid:1, healblock:1, healpulse:1, leechseed:1, lockon:1, meanlook:1, mindreader:1, nightmare:1, painsplit:1, psychoshift:1, simplebeam:1, skydrop:1, soak: 1, spiderweb:1, switcheroo:1, trick:1, worryseed:1, yawn:1
-					};
-					if (move.status || move.boosts || move.volatileStatus === 'confusion' || SubBlocked[move.id]) {
-						return false;
-					}
-					return;
-				}
-				var damage = this.getDamage(source, target, move);
+				let damage = this.getDamage(source, target, move);
 				if (!damage) {
 					return null;
 				}
@@ -166,7 +175,7 @@ exports.BattleMovedex = {
 					this.add('-activate', target, 'Substitute', '[damage]');
 				}
 				if (move.recoil) {
-					this.damage(Math.round(damage * move.recoil[0] / move.recoil[1]), source, target, 'recoil');
+					this.damage(this.clampIntRange(Math.round(damage * move.recoil[0] / move.recoil[1]), 1), source, target, 'recoil');
 				}
 				if (move.drain) {
 					this.heal(Math.ceil(damage * move.drain[0] / move.drain[1]), source, target, 'drain');
@@ -174,28 +183,23 @@ exports.BattleMovedex = {
 				this.runEvent('AfterSubDamage', target, source, move, damage);
 				return 0; // hit
 			},
-			onEnd: function(target) {
+			onEnd: function (target) {
 				this.add('-end', target, 'Substitute');
-			}
-		}
+			},
+		},
 	},
 	"protect": {
 		inherit: true,
 		effect: {
 			duration: 1,
-			onStart: function(target) {
+			onStart: function (target) {
 				this.add('-singleturn', target, 'Protect');
 			},
 			onTryHitPriority: 3,
-			onTryHit: function(target, source, move) {
-				if (target.volatiles.substitute) return;
-				if (move.breaksProtect) {
-					target.removeVolatile('Protect');
-					return;
-				}
-				if (move && (move.target === 'self' || move.isNotProtectable)) return;
+			onTryHit: function (target, source, move) {
+				if (target.volatiles.substitute || !move.flags['protect']) return;
 				this.add('-activate', target, 'Protect');
-				var lockedmove = source.getVolatile('lockedmove');
+				let lockedmove = source.getVolatile('lockedmove');
 				if (lockedmove) {
 					// Outrage counter is reset
 					if (source.volatiles['lockedmove'].duration === 2) {
@@ -203,31 +207,79 @@ exports.BattleMovedex = {
 					}
 				}
 				return null;
-			}
-		}
+			},
+		},
+	},
+	"kingsshield": {
+		inherit: true,
+		effect: {
+			duration: 1,
+			onStart: function (target) {
+				this.add('-singleturn', target, 'Protect');
+			},
+			onTryHitPriority: 3,
+			onTryHit: function (target, source, move) {
+				if (target.volatiles.substitute || !move.flags['protect'] || move.category === 'Status') return;
+				this.add('-activate', target, 'Protect');
+				let lockedmove = source.getVolatile('lockedmove');
+				if (lockedmove) {
+					// Outrage counter is reset
+					if (source.volatiles['lockedmove'].duration === 2) {
+						delete source.volatiles['lockedmove'];
+					}
+				}
+				if (move.flags['contact']) {
+					this.boost({atk: -2}, source, target, this.getMove("King's Shield"));
+				}
+				return null;
+			},
+		},
+	},
+	"spikyshield": {
+		inherit: true,
+		effect: {
+			duration: 1,
+			onStart: function (target) {
+				this.add('-singleturn', target, 'move: Protect');
+			},
+			onTryHitPriority: 3,
+			onTryHit: function (target, source, move) {
+				if (target.volatiles.substitute || !move.flags['protect']) return;
+				if (move && (move.target === 'self' || move.id === 'suckerpunch')) return;
+				this.add('-activate', target, 'move: Protect');
+				if (move.flags['contact']) {
+					this.damage(source.maxhp / 8, source, target);
+				}
+				return null;
+			},
+		},
 	},
 	minimize: {
 		inherit: true,
 		boosts: {
-			evasion: 1
-		}
+			evasion: 1,
+		},
+		desc: "Raises the user's evasiveness by 1 stages. Whether or not the user's evasiveness was changed, Body Slam, Dragon Rush, Flying Press, Heat Crash, Heavy Slam, Phantom Force, Shadow Force, Steamroller, and Stomp will not check accuracy and have their damage doubled if used against the user while it is active.",
+		shortDesc: "Raises the user's evasiveness by 1.",
 	},
 	doubleteam: {
 		inherit: true,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			if (target.boosts.evasion >= 6) {
 				return false;
 			}
-			if (target.hp <= target.maxhp/4 || target.maxhp === 1) { // Shedinja clause
+			if (target.hp <= target.maxhp / 4 || target.maxhp === 1) { // Shedinja clause
 				return false;
 			}
 		},
-		onHit: function(target) {
-			this.directDamage(target.maxhp/4);
+		onHit: function (target) {
+			this.directDamage(target.maxhp / 4);
 		},
 		boosts: {
-			evasion: 1
-		}
+			evasion: 1,
+		},
+		desc: "Raises the user's evasiveness by 1 stage; the user loses 1/4 of its max HP.",
+		shortDesc: "Raises the user's evasiveness by 1; the user loses 25% of its max HP.",
 	},
 	/******************************************************************
 	Two-turn moves:
@@ -238,313 +290,385 @@ exports.BattleMovedex = {
 	******************************************************************/
 	solarbeam: {
 		inherit: true,
-		basePower: 60,
-		basePowerCallback: function(pokemon, target) {
-			return 60;
+		basePower: 80,
+		basePowerCallback: function (pokemon, target) {
+			return 80;
 		},
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		effect: {
 			duration: 2,
 			onLockMove: 'solarbeam',
-			onStart: function(pokemon) {
-				this.heal(pokemon.maxhp/2);
-			}
+			onStart: function (pokemon) {
+				this.heal(pokemon.maxhp / 2);
+			},
 		},
-		breaksProtect: true
+		desc: "This attack charges on the first turn and executes on the second. Power is halved if the weather is Hail, Rain Dance, or Sandstorm. If the user is holding a Power Herb or the weather is Sunny Day, the move completes in one turn. The user heals 1/2 of its max HP during the charge turn. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Charges turn 1. Hits turn 2. No charge in sunlight. Heals 1/2 of the user's max HP, on charge.",
+		flags: {charge: 1, mirror: 1},
+		breaksProtect: true,
 	},
 	razorwind: {
 		inherit: true,
-		basePower: 40,
+		basePower: 60,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
-			volatileStatus: 'confusion'
+			volatileStatus: 'confusion',
 		},
-		breaksProtect: true
+		desc: "Has a higher chance for a critical hit. This attack charges on the first turn and executes on the second. If the user is holding a Power Herb, the move completes in one turn. 100% chance to confuse the target. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Charges, then hits foe(s) turn 2. High crit ratio. Confuses target.",
+		flags: {charge: 1, mirror: 1},
+		breaksProtect: true,
 	},
 	skullbash: {
 		inherit: true,
-		basePower: 50,
+		basePower: 70,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
-		effect: {
-			duration: 2,
-			onLockMove: 'skullbash',
-			onStart: function(pokemon) {
-				this.boost({def:1,spd:1,accuracy:1}, pokemon, pokemon, this.getMove('skullbash'));
+		onTry: function (attacker, defender, move) {
+			if (attacker.removeVolatile(move.id)) {
+				return;
 			}
+			this.add('-prepare', attacker, move.name, defender);
+			this.boost({def: 1, spd: 1, accuracy: 1}, attacker, attacker, this.getMove('skullbash'));
+			if (!this.runEvent('ChargeMove', attacker, defender, move)) {
+				this.add('-anim', attacker, move.name, defender);
+				attacker.removeVolatile(move.id);
+				return;
+			}
+			attacker.addVolatile('twoturnmove', defender);
+			return null;
 		},
-		breaksProtect: true
+		flags: {contact: 1, charge: 1, mirror: 1},
+		breaksProtect: true,
+		desc: "This attack charges on the first turn and executes on the second. Raises the user's Defense, Special Defense, and Accuracy by 1 stage on the first turn. If the user is holding a Power Herb, the move completes in one turn. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Raises user's Def, SpD, Acc by 1 on turn 1. Hits turn 2.",
 	},
 	skyattack: {
 		inherit: true,
-		basePower: 70,
+		basePower: 95,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
 			boosts: {
-				def: -1
-			}
+				def: -1,
+			},
 		},
-		breaksProtect: true
+		flags: {charge: 1, mirror: 1, distance: 1},
+		breaksProtect: true,
+		desc: "Has a 30% chance to flinch the target and a higher chance for a critical hit. This attack charges on the first turn and executes on the second. If the user is holding a Power Herb, the move completes in one turn. 100% chance to lower the target's Defense by one stage. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Charges, then hits turn 2. 30% flinch. High crit.",
 	},
 	freezeshock: {
 		inherit: true,
-		basePower: 70,
+		basePower: 95,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
-			status: 'par'
+			status: 'par',
 		},
-		breaksProtect: true
+		flags: {charge: 1, mirror: 1},
+		breaksProtect: true,
+		desc: "Has a 100% chance to paralyze the target. This attack charges on the first turn and executes on the second. If the user is holding a Power Herb, the move completes in one turn. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Charges turn 1. Hits turn 2. 100% paralyze.",
 	},
 	iceburn: {
 		inherit: true,
-		basePower: 70,
+		basePower: 95,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
-			status: 'brn'
+			status: 'brn',
 		},
-		breaksProtect: true
+		flags: {charge: 1, mirror: 1},
+		breaksProtect: true,
+		desc: "Has a 100% chance to burn the target. This attack charges on the first turn and executes on the second. If the user is holding a Power Herb, the move completes in one turn. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Charges turn 1. Hits turn 2. 100% burn.",
 	},
 	bounce: {
 		inherit: true,
-		basePower: 45,
+		basePower: 60,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
-		secondary: {
-			chance: 30,
-			status: 'par'
-		},
-		breaksProtect: true
+		flags: {contact: 1, charge: 1, mirror: 1, gravity: 1, distance: 1},
+		breaksProtect: true,
+		desc: "Has a 30% chance to paralyze the target. This attack charges on the first turn and executes on the second. On the first turn, the user avoids all attacks other than Gust, Hurricane, Sky Uppercut, Smack Down, Thousand Arrows, Thunder, and Twister. If the user is holding a Power Herb, the move completes in one turn. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Bounces turn 1. Hits turn 2. 30% paralyze.",
 	},
 	fly: {
 		inherit: true,
-		basePower: 45,
+		basePower: 60,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
 			boosts: {
-				def: -1
-			}
+				def: -1,
+			},
 		},
-		breaksProtect: true
+		flags: {contact: 1, charge: 1, mirror: 1, gravity: 1, distance: 1},
+		breaksProtect: true,
+		desc: "This attack charges on the first turn and executes on the second. On the first turn, the user avoids all attacks other than Gust, Hurricane, Sky Uppercut, Smack Down, Thousand Arrows, Thunder, and Twister. If the user is holding a Power Herb, the move completes in one turn. 100% chance to lower the target's Defense by one stage. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Flies up on first turn, then strikes the next turn. Lowers target's Def by 1 stage.",
 	},
 	dig: {
 		inherit: true,
-		basePower: 45,
+		basePower: 60,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
 			boosts: {
-				def: -1
-			}
+				def: -1,
+			},
 		},
-		breaksProtect: true
+		desc: "This attack charges on the first turn and executes on the second. On the first turn, the user avoids all attacks other than Earthquake and Magnitude but takes double damage from them, and is also unaffected by weather. If the user is holding a Power Herb, the move completes in one turn. 100% chance to lower the target's Defense by one stage. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Digs underground turn 1, strikes turn 2. Lowers target's Def by 1 stage.",
+		flags: {contact: 1, charge: 1, mirror: 1, nonsky: 1},
+		breaksProtect: true,
 	},
 	dive: {
 		inherit: true,
-		basePower: 45,
+		basePower: 60,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
 			boosts: {
-				def: -1
-			}
+				def: -1,
+			},
 		},
-		breaksProtect: true
+		desc: "This attack charges on the first turn and executes on the second. On the first turn, the user avoids all attacks other than Surf and Whirlpool but takes double damage from them, and is also unaffected by weather. If the user is holding a Power Herb, the move completes in one turn. 100% chance to lower the target's Defense by one stage. This move removes the target's Substitute (if one is active), and bypasses Protect. This move is also a guaranteed critical hit.",
+		shortDesc: "Dives underwater turn 1, strikes turn 2. Lowers target's Def by 1 stage.",
+		flags: {contact: 1, charge: 1, mirror: 1, nonsky: 1},
+		breaksProtect: true,
 	},
-	shadowforce: {
+	phantomforce: {
 		inherit: true,
-		basePower: 30,
+		basePower: 60,
 		willCrit: true,
 		accuracy: true,
 		onTryHitPriority: 10,
-		onTryHit: function(target) {
+		onTryHit: function (target) {
 			target.removeVolatile('substitute');
 		},
 		secondary: {
 			chance: 100,
-			volatileStatus: 'curse'
+			boosts: {
+				def: -1,
+			},
 		},
-		breaksProtect: true
+		desc: "If this move is successful, it breaks through the target's Detect, King's Shield, Protect, or Spiky Shield for this turn, allowing other Pokemon to attack the target normally. If the target's side is protected by Crafty Shield, Mat Block, Quick Guard, or Wide Guard, that protection is also broken for this turn and other Pokemon may attack the target's side normally. This attack charges on the first turn and executes on the second. On the first turn, the user avoids all attacks. If the user is holding a Power Herb, the move completes in one turn. Damage doubles and no accuracy check is done if the target has used Minimize while active. 100% chance to lower the target's Defense by one stage. This move removes the target's Substitute (if one is active). This move is also a guaranteed critical hit.",
+		shortDesc: "Disappears turn 1. Hits turn 2. Breaks protection. Lowers target's Def by 1 stage.",
 	},
-	skydrop: {
+	shadowforce: {
 		inherit: true,
 		basePower: 40,
 		willCrit: true,
 		accuracy: true,
+		onTryHitPriority: 10,
+		onTryHit: function (target) {
+			target.removeVolatile('substitute');
+		},
+		secondary: {
+			chance: 100,
+			volatileStatus: 'curse',
+		},
+		desc: "If this move is successful, it breaks through the target's Detect, King's Shield, Protect, or Spiky Shield for this turn, allowing other Pokemon to attack the target normally. If the target's side is protected by Crafty Shield, Mat Block, Quick Guard, or Wide Guard, that protection is also broken for this turn and other Pokemon may attack the target's side normally. This attack charges on the first turn and executes on the second. On the first turn, the user avoids all attacks. If the user is holding a Power Herb, the move completes in one turn. Damage doubles and no accuracy check is done if the target has used Minimize while active. 100% chance to inflict a curse (ghost type) onto the target. This move removes the target's Substitute (if one is active). This move is also a guaranteed critical hit.",
+		shortDesc: "Disappears turn 1. Hits turn 2. Breaks protection. Curses the target.",
+	},
+	skydrop: {
+		inherit: true,
+		basePower: 60,
+		willCrit: true,
+		accuracy: true,
 		secondary: {
 			chance: 100,
 			boosts: {
-				def: -1
-			}
+				def: -1,
+			},
 		},
-		breaksProtect: true
+		desc: "This attack takes the target into the air with the user on the first turn and executes on the second. Pokemon weighing 200kg or more cannot be lifted. On the first turn, the user and the target avoid all attacks other than Gust, Hurricane, Sky Uppercut, Smack Down, Thousand Arrows, Thunder, and Twister. The user and the target cannot make a move between turns, but the target can select a move to use. This move cannot damage Flying-type Pokemon. Fails on the first turn if the target is an ally or if the target has a substitute. Lowers the target's Defense by one stage. This move is a guaranteed critical hit. This move ignores Protection.",
+		shortDesc: "User and foe fly up turn 1. Damages on turn 2. Lowers target's Def by 1 stage.",
+		flags: {contact: 1, charge: 1, mirror: 1, gravity: 1, distance: 1},
+		breaksProtect: true,
 	},
 	hyperbeam: {
 		inherit: true,
 		accuracy: true,
-		basePower: 75,
+		basePower: 100,
 		willCrit: true,
 		self: null,
-		onHit: function(target, source) {
+		onHit: function (target, source) {
 			if (!target.hp) {
 				source.addVolatile('mustrecharge');
 			}
-		}
+		},
+		desc: "If this move is successful, the user must recharge on the following turn and cannot make a move. If the target is knocked out by this move, the user does not have to recharge. This move is a guaranteed critical hit.",
+		shortDesc: "User cannot move next turn, if the target isn't KO'ed.",
 	},
 	gigaimpact: {
 		inherit: true,
 		accuracy: true,
-		basePower: 75,
+		basePower: 100,
 		willCrit: true,
 		self: null,
-		onHit: function(target, source) {
+		onHit: function (target, source) {
 			if (!target.hp) {
 				source.addVolatile('mustrecharge');
 			}
-		}
+		},
+		desc: "If this move is successful, the user must recharge on the following turn and cannot make a move. If the target is knocked out by this move, the user does not have to recharge. This move is a guaranteed critical hit.",
+		shortDesc: "User cannot move next turn, if the target isn't KO'ed.",
 	},
 	blastburn: {
 		inherit: true,
 		accuracy: true,
-		basePower: 75,
+		basePower: 100,
 		willCrit: true,
 		self: null,
-		onHit: function(target, source) {
+		onHit: function (target, source) {
 			if (!target.hp) {
 				source.addVolatile('mustrecharge');
 			}
-		}
+		},
+		desc: "If this move is successful, the user must recharge on the following turn and cannot make a move. If the target is knocked out by this move, the user does not have to recharge. This move is a guaranteed critical hit.",
+		shortDesc: "User cannot move next turn, if the target isn't KO'ed.",
 	},
 	frenzyplant: {
 		inherit: true,
 		accuracy: true,
-		basePower: 75,
+		basePower: 100,
 		willCrit: true,
 		self: null,
-		onHit: function(target, source) {
+		onHit: function (target, source) {
 			if (!target.hp) {
 				source.addVolatile('mustrecharge');
 			}
-		}
+		},
+		desc: "If this move is successful, the user must recharge on the following turn and cannot make a move. If the target is knocked out by this move, the user does not have to recharge. This move is a guaranteed critical hit.",
+		shortDesc: "User cannot move next turn, if the target isn't KO'ed.",
 	},
 	hydrocannon: {
 		inherit: true,
 		accuracy: true,
-		basePower: 75,
+		basePower: 100,
 		willCrit: true,
 		self: null,
-		onHit: function(target, source) {
+		onHit: function (target, source) {
 			if (!target.hp) {
 				source.addVolatile('mustrecharge');
 			}
-		}
+		},
+		desc: "If this move is successful, the user must recharge on the following turn and cannot make a move. If the target is knocked out by this move, the user does not have to recharge. This move is a guaranteed critical hit.",
+		shortDesc: "User cannot move next turn, if the target isn't KO'ed.",
 	},
 	rockwrecker: {
 		inherit: true,
 		accuracy: true,
-		basePower: 75,
+		basePower: 100,
 		willCrit: true,
 		self: null,
-		onHit: function(target, source) {
+		onHit: function (target, source) {
 			if (!target.hp) {
 				source.addVolatile('mustrecharge');
 			}
-		}
+		},
+		desc: "If this move is successful, the user must recharge on the following turn and cannot make a move. If the target is knocked out by this move, the user does not have to recharge. This move is a guaranteed critical hit.",
+		shortDesc: "User cannot move next turn, if the target isn't KO'ed.",
 	},
 	roaroftime: {
 		inherit: true,
 		accuracy: true,
-		basePower: 75,
+		basePower: 100,
 		willCrit: true,
 		self: null,
-		onHit: function(target, source) {
+		onHit: function (target, source) {
 			if (!target.hp) {
 				source.addVolatile('mustrecharge');
 			}
-		}
+		},
+		desc: "If this move is successful, the user must recharge on the following turn and cannot make a move. If the target is knocked out by this move, the user does not have to recharge. This move is a guaranteed critical hit.",
+		shortDesc: "User cannot move next turn, if the target isn't KO'ed.",
 	},
 	bide: {
 		inherit: true,
+		onTryHit: function (pokemon) {
+			return this.willAct() && this.runEvent('StallMove', pokemon);
+		},
 		effect: {
 			duration: 2,
 			onLockMove: 'bide',
-			onStart: function(pokemon) {
+			onStart: function (pokemon) {
 				if (pokemon.removeVolatile('bidestall') || pokemon.hp <= 1) return false;
 				pokemon.addVolatile('bidestall');
 				this.effectData.totalDamage = 0;
 				this.add('-start', pokemon, 'Bide');
 			},
 			onDamagePriority: -11,
-			onDamage: function(damage, target, source, effect) {
+			onDamage: function (damage, target, source, effect) {
 				if (!effect || effect.effectType !== 'Move') return;
 				if (!source || source.side === target.side) return;
 				if (effect && effect.effectType === 'Move' && damage >= target.hp) {
-					damage = target.hp-1;
+					damage = target.hp - 1;
 				}
 				this.effectData.totalDamage += damage;
 				this.effectData.sourcePosition = source.position;
 				this.effectData.sourceSide = source.side;
 				return damage;
 			},
-			onAfterSetStatus: function(status, pokemon) {
+			onAfterSetStatus: function (status, pokemon) {
 				if (status.id === 'slp') {
 					pokemon.removeVolatile('bide');
 					pokemon.removeVolatile('bidestall');
 				}
 			},
-			onBeforeMove: function(pokemon) {
+			onBeforeMove: function (pokemon, target, move) {
 				if (this.effectData.duration === 1) {
 					if (!this.effectData.totalDamage) {
 						this.add('-end', pokemon, 'Bide');
@@ -552,29 +676,36 @@ exports.BattleMovedex = {
 						return false;
 					}
 					this.add('-end', pokemon, 'Bide');
-					var target = this.effectData.sourceSide.active[this.effectData.sourcePosition];
-					this.moveHit(target, pokemon, 'bide', {damage: this.effectData.totalDamage*2});
+					let target = this.effectData.sourceSide.active[this.effectData.sourcePosition];
+					let moveData = /** @type {ActiveMove} */ ({
+						damage: this.effectData.totalDamage * 2,
+					});
+					this.moveHit(target, pokemon, 'bide', moveData);
 					return false;
 				}
 				this.add('-activate', pokemon, 'Bide');
 				return false;
-			}
-		}
+			},
+			onMoveAborted: function (pokemon) {
+				pokemon.removeVolatile('bide');
+			},
+		},
 	},
 	/******************************************************************
 	Snore:
 	- base power increased to 100
-	- deals Special damage off physical Attack (reverse Psyshock)
 
 	Justification:
 	- Sleep Talk needs some competition
 	******************************************************************/
 	snore: {
 		inherit: true,
-		category: "Physical",
-		defensiveCategory: "Special",
 		basePower: 100,
-		affectedByImmunities: false
+		onBasePower: function (power, user) {
+			if (user.template.id === 'snorlax') return power * 1.5;
+		},
+		ignoreImmunity: true,
+		desc: "Has a 30% chance to flinch the target. Fails if the user is not asleep. If the user is a Snorlax, this move does 1.5x more damage.",
 	},
 	/******************************************************************
 	Sound-based Normal-type moves:
@@ -584,21 +715,25 @@ exports.BattleMovedex = {
 	- they're already affected by Soundproof, also, ghosts can hear
 	  sounds
 	******************************************************************/
+	boomburst: {
+		inherit: true,
+		ignoreImmunity: true,
+	},
 	hypervoice: {
 		inherit: true,
-		affectedByImmunities: false
+		ignoreImmunity: true,
 	},
 	round: {
 		inherit: true,
-		affectedByImmunities: false
+		ignoreImmunity: true,
 	},
 	uproar: {
 		inherit: true,
-		affectedByImmunities: false
+		ignoreImmunity: true,
 	},
 	/******************************************************************
-	Bonemerang, Bone Rush moves:
-	- not affected by immunities
+	Bonemerang, Bone Rush, Bone Club moves:
+	- not affected by Ground immunities
 	- Bone Rush nerfed to 20 base power so it's not viable on Lucario
 
 	Justification:
@@ -606,14 +741,19 @@ exports.BattleMovedex = {
 	******************************************************************/
 	bonemerang: {
 		inherit: true,
-		affectedByImmunities: false,
-		accuracy: true
+		ignoreImmunity: true,
+		accuracy: true,
 	},
 	bonerush: {
 		inherit: true,
 		basePower: 20,
-		affectedByImmunities: false,
-		accuracy: true
+		ignoreImmunity: true,
+		accuracy: true,
+	},
+	boneclub: {
+		inherit: true,
+		ignoreImmunity: true,
+		accuracy: 90,
 	},
 	/******************************************************************
 	Relic Song:
@@ -625,45 +765,62 @@ exports.BattleMovedex = {
 	relicsong: {
 		inherit: true,
 		basePower: 60,
-		affectedByImmunities: false,
-		onHit: function(target, pokemon) {
+		ignoreImmunity: true,
+		onHit: function (target, pokemon) {
 			if (pokemon.baseTemplate.species !== 'Meloetta' || pokemon.transformed) {
 				return;
 			}
-			var natureChange = {
+			/**@type {{[k: string]: string}} */
+			let natureChange = {
 				'Modest': 'Adamant',
 				'Adamant': 'Modest',
 				'Timid': 'Jolly',
-				'Jolly': 'Timid'
+				'Jolly': 'Timid',
 			};
-			if (pokemon.template.speciesid==='meloettapirouette' && pokemon.formeChange('Meloetta')) {
-				this.add('-formechange', pokemon, 'Meloetta');
-				var tmpAtkEVs = pokemon.set.evs.atk;
+			let tmpAtkEVs;
+			let Atk2SpA;
+			if (pokemon.template.speciesid === 'meloettapirouette' && pokemon.formeChange('Meloetta', this.effect, false, '[msg]')) {
+				tmpAtkEVs = pokemon.set.evs.atk;
 				pokemon.set.evs.atk = pokemon.set.evs.spa;
 				pokemon.set.evs.spa = tmpAtkEVs;
 				if (natureChange[pokemon.set.nature]) pokemon.set.nature = natureChange[pokemon.set.nature];
-				var Atk2SpA = (pokemon.boosts.spa||0) - (pokemon.boosts.atk||0);
+				Atk2SpA = (pokemon.boosts.spa || 0) - (pokemon.boosts.atk || 0);
 				this.boost({
 					atk: Atk2SpA,
-					spa: -Atk2SpA
+					spa: -Atk2SpA,
 				}, pokemon);
-			} else if (pokemon.formeChange('Meloetta-Pirouette')) {
-				this.add('-formechange', pokemon, 'Meloetta-Pirouette');
-				var tmpAtkEVs = pokemon.set.evs.atk;
+			} else if (pokemon.formeChange('Meloetta-Pirouette', this.effect, false, '[msg]')) {
+				tmpAtkEVs = pokemon.set.evs.atk;
 				pokemon.set.evs.atk = pokemon.set.evs.spa;
 				pokemon.set.evs.spa = tmpAtkEVs;
 				if (natureChange[pokemon.set.nature]) pokemon.set.nature = natureChange[pokemon.set.nature];
-				var Atk2SpA = (pokemon.boosts.spa||0) - (pokemon.boosts.atk||0);
+				Atk2SpA = (pokemon.boosts.spa || 0) - (pokemon.boosts.atk || 0);
 				this.boost({
 					atk: Atk2SpA,
-					spa: -Atk2SpA
+					spa: -Atk2SpA,
 				}, pokemon);
 			}
 			// renderer takes care of this for us
 			pokemon.transformed = false;
 		},
 		priority: 1,
-		secondary: null
+		secondary: null,
+		desc: "Has a 10% chance to cause the target to fall asleep. If this move is successful on at least one target and the user is a Meloetta, it changes to Pirouette Forme if it is currently in Aria Forme, or changes to Aria Forme if it is currently in Pirouette Forme. This forme change does not happen if the Meloetta has the Ability Sheer Force. The Pirouette Forme reverts to Aria Forme when Meloetta is not active. This move also switches Meloetta's SpA and Atk EVs, boosts, and certain natures, specifically: Modest <-> Adamant, Jolly <-> Timid, other natures are left untouched.",
+	},
+	/******************************************************************
+	Defend Order, Heal Order:
+	- now +1 priority
+
+	Justification:
+	- Vespiquen needs viability
+	******************************************************************/
+	defendorder: {
+		inherit: true,
+		priority: 1,
+	},
+	healorder: {
+		inherit: true,
+		priority: 1,
 	},
 	/******************************************************************
 	Stealth Rock:
@@ -684,35 +841,17 @@ exports.BattleMovedex = {
 		inherit: true,
 		effect: {
 			// this is a side condition
-			onStart: function(side) {
-				this.add('-sidestart',side,'move: Stealth Rock');
+			onStart: function (side) {
+				this.add('-sidestart', side, 'move: Stealth Rock');
 			},
-			onSwitchIn: function(pokemon) {
-				var factor = 2;
+			onSwitchIn: function (pokemon) {
+				let factor = 2;
 				if (pokemon.hasType('Flying')) factor = 4;
-				var damage = this.damage(pokemon.maxhp*factor/16);
-			}
-		}
-	},
-	quiverdance: {
-		// Quiver Dance is nerfed because Volc
-		inherit: true,
-		boosts: {
-			spd: 1,
-			spe: 1,
-			accuracy: 1
+				this.damage(pokemon.maxhp * factor / 16);
+			},
 		},
-		onModifyMove: function(move, user) {
-			var GossamerWingUsers = {"Butterfree":1, "Masquerain":1, "Beautifly":1, "Mothim":1, "Lilligant":1};
-			if (user.item === 'stick' && GossamerWingUsers[user.template.species]) {
-				move.boosts = {
-					spa: 1,
-					spd: 1,
-					spe: 1,
-					accuracy: 1
-				};
-			}
-		}
+		desc: "Sets up a hazard on the foe's side of the field. Flying types take 1/4 of their max HP from this hazard. Everything else takes 1/8 of their max HP. Can be removed from the foe's side if any foe uses Rapid Spin or Defog, or is hit by Defog.",
+		shortDesc: "Hurts foes on switch-in (1/8 for every type except Flying types take 1/4).",
 	},
 	/******************************************************************
 	Silver Wind, Ominous Wind, AncientPower:
@@ -732,7 +871,7 @@ exports.BattleMovedex = {
 	******************************************************************/
 	silverwind: {
 		inherit: true,
-		basePowerCallback: function() {
+		basePowerCallback: function () {
 			if (this.isWeather('hail')) {
 				return 90;
 			}
@@ -741,28 +880,32 @@ exports.BattleMovedex = {
 		secondary: {
 			chance: 100,
 			self: {
-				onHit: function(target, source) {
-					var stats = [];
-					for (var i in target.boosts) {
-						if (i!=='accuracy' && i!=='evasion' && i!=='atk' && target.boosts[i] < 6) {
-							stats.push(i);
+				onHit: function (target, source) {
+					let stats = [];
+					for (let stat in target.boosts) {
+						// @ts-ignore
+						if (stat !== 'accuracy' && stat !== 'evasion' && stat !== 'atk' && target.boosts[stat] < 6) {
+							stats.push(stat);
 						}
 					}
 					if (stats.length) {
-						var i = stats[this.random(stats.length)];
-						var boost = {};
-						boost[i] = 1;
+						let randomStat = this.sample(stats);
+						/**@type {{[k: string]: number}} */
+						let boost = {};
+						boost[randomStat] = 1;
 						this.boost(boost);
 					} else {
 						return false;
 					}
-				}
-			}
-		}
+				},
+			},
+		},
+		desc: "Has a 100% chance to raise the user's Attack, Defense, Special Attack, Special Defense, and Speed by 1 stage. This attack's base power becomes 90, if the weather is set to Hail.",
+		shortDesc: "Raises all stats by 1 (not acc/eva).",
 	},
 	ominouswind: {
 		inherit: true,
-		basePowerCallback: function() {
+		basePowerCallback: function () {
 			if (this.isWeather('hail')) {
 				return 90;
 			}
@@ -771,48 +914,56 @@ exports.BattleMovedex = {
 		secondary: {
 			chance: 100,
 			self: {
-				onHit: function(target, source) {
-					var stats = [];
-					for (var i in target.boosts) {
-						if (i!=='accuracy' && i!=='evasion' && i!=='atk' && target.boosts[i] < 6) {
-							stats.push(i);
+				onHit: function (target, source) {
+					let stats = [];
+					for (let stat in target.boosts) {
+						// @ts-ignore
+						if (stat !== 'accuracy' && stat !== 'evasion' && stat !== 'atk' && target.boosts[stat] < 6) {
+							stats.push(stat);
 						}
 					}
 					if (stats.length) {
-						var i = stats[this.random(stats.length)];
-						var boost = {};
-						boost[i] = 1;
+						let randomStat = this.sample(stats);
+						/**@type {{[k: string]: number}} */
+						let boost = {};
+						boost[randomStat] = 1;
 						this.boost(boost);
 					} else {
 						return false;
 					}
-				}
-			}
-		}
+				},
+			},
+		},
+		desc: "Has a 100% chance to raise the user's Attack, Defense, Special Attack, Special Defense, and Speed by 1 stage. This attack's base power becomes 90, if the weather is set to Hail.",
+		shortDesc: "Raises all stats by 1 (not acc/eva).",
 	},
 	ancientpower: {
 		inherit: true,
 		secondary: {
 			chance: 100,
 			self: {
-				onHit: function(target, source) {
-					var stats = [];
-					for (var i in target.boosts) {
-						if (i!=='accuracy' && i!=='evasion' && i!=='atk' && target.boosts[i] < 6) {
-							stats.push(i);
+				onHit: function (target, source) {
+					let stats = [];
+					for (let stat in target.boosts) {
+						// @ts-ignore
+						if (stat !== 'accuracy' && stat !== 'evasion' && stat !== 'atk' && target.boosts[stat] < 6) {
+							stats.push(stat);
 						}
 					}
 					if (stats.length) {
-						var i = stats[this.random(stats.length)];
-						var boost = {};
-						boost[i] = 1;
+						let randomStat = this.sample(stats);
+						/**@type {{[k: string]: number}} */
+						let boost = {};
+						boost[randomStat] = 1;
 						this.boost(boost);
 					} else {
 						return false;
 					}
-				}
-			}
-		}
+				},
+			},
+		},
+		desc: "Has a 100% chance to raise the user's Attack, Defense, Special Attack, Special Defense, and Speed by 1 stage.",
+		shortDesc: "Raises all stats by 1 (not acc/eva).",
 	},
 	/******************************************************************
 	Moves relating to Hail:
@@ -823,13 +974,18 @@ exports.BattleMovedex = {
 	******************************************************************/
 	avalanche: {
 		inherit: true,
-		basePowerCallback: function(pokemon, source) {
-			if ((source.lastDamage > 0 && pokemon.lastAttackedBy && pokemon.lastAttackedBy.thisTurn)) {
-				this.debug('Boosted for getting hit by '+pokemon.lastAttackedBy.move);
-				return this.isWeather('hail')?180:120;
+		basePowerCallback: function (pokemon, source) {
+			let lastAttackedBy = pokemon.getLastAttackedBy();
+			if (lastAttackedBy) {
+				if (lastAttackedBy.damage > 0 && lastAttackedBy.thisTurn) {
+					this.debug('Boosted for getting hit by ' + lastAttackedBy.move);
+					return this.isWeather('hail') ? 180 : 120;
+				}
 			}
-			return this.isWeather('hail')?90:60;
-		}
+			return this.isWeather('hail') ? 90 : 60;
+		},
+		desc: "Power doubles if the user was hit by the target this turn. If the weather is set to hail, this move does 1.5x more damage.",
+		shortDesc: "Power doubles if user is damaged by the target.",
 	},
 	/******************************************************************
 	Direct phazing moves:
@@ -850,11 +1006,11 @@ exports.BattleMovedex = {
 	******************************************************************/
 	roar: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	whirlwind: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	/******************************************************************
 	Multi-hit moves:
@@ -870,71 +1026,75 @@ exports.BattleMovedex = {
 	******************************************************************/
 	doublehit: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	armthrust: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	barrage: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	beatup: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	bulletseed: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	cometpunch: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	doublekick: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	doubleslap: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	dualchop: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	furyattack: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	furyswipes: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	geargrind: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	iciclespear: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	pinmissile: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	rockblast: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	spikecannon: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
 	},
 	tailslap: {
 		inherit: true,
-		accuracy: true
+		accuracy: true,
+	},
+	watershuriken: {
+		inherit: true,
+		accuracy: true,
 	},
 	/******************************************************************
 	Draining moves:
@@ -945,7 +1105,7 @@ exports.BattleMovedex = {
 	******************************************************************/
 	leechlife: {
 		inherit: true,
-		basePower: 75
+		basePower: 75,
 	},
 	/******************************************************************
 	Flying moves:
@@ -958,18 +1118,28 @@ exports.BattleMovedex = {
 	twister: {
 		inherit: true,
 		basePower: 80,
+		onBasePower: function (power, user) {
+			let GossamerWingUsers = ["Butterfree", "Venomoth", "Masquerain", "Dustox", "Beautifly", "Mothim", "Lilligant", "Volcarona", "Vivillon"];
+			if (user.hasItem('stick') && GossamerWingUsers.includes(user.template.species)) {
+				return power * 1.5;
+			}
+		},
 		secondary: {
 			chance: 30,
-			volatileStatus: 'confusion'
+			volatileStatus: 'confusion',
 		},
+		desc: "Has a 30% chance to flinch the target. Damage doubles if the target is using Bounce, Fly, or Sky Drop. If the user holds the Gossamer Wing, this move does 1.5x more damage.",
+		shortDesc: "30% chance to flinch the foe(s).",
 		pp: 15,
-		type: "Flying"
+		type: "Flying",
 	},
 	wingattack: {
 		inherit: true,
 		basePower: 40,
 		accuracy: true,
-		multihit: [2,2]
+		multihit: [2, 2],
+		desc: "This move hits twice.",
+		shortDesc: "Hits twice.",
 	},
 	/******************************************************************
 	Moves with not enough drawbacks:
@@ -983,9 +1153,11 @@ exports.BattleMovedex = {
 		self: {
 			boosts: {
 				def: -2,
-				spd: -2
-			}
-		}
+				spd: -2,
+			},
+		},
+		desc: "Lowers the user's Defense and Special Defense by 2 stage.",
+		shortDesc: "Lowers the user's Defense and Sp. Def by 2.",
 	},
 	/******************************************************************
 	Blizzard:
@@ -999,8 +1171,10 @@ exports.BattleMovedex = {
 		inherit: true,
 		secondary: {
 			chance: 30,
-			status: 'frz'
-		}
+			status: 'frz',
+		},
+		desc: "Has a 30% chance to freeze the target. If the weather is Hail, this move does not check accuracy.",
+		shortDesc: "30% chance to freeze foe(s). Can't miss in hail.",
 	},
 	/******************************************************************
 	Special Ghost and Fighting:
@@ -1013,7 +1187,7 @@ exports.BattleMovedex = {
 	******************************************************************/
 	focusblast: {
 		inherit: true,
-		accuracy: 50
+		accuracy: 30,
 	},
 	shadowball: {
 		inherit: true,
@@ -1021,13 +1195,15 @@ exports.BattleMovedex = {
 		secondary: {
 			chance: 30,
 			boosts: {
-				spd: -1
-			}
-		}
+				spd: -1,
+			},
+		},
+		desc: "Has a 30% chance to lower the target's Special Defense by 1 stage.",
+		shortDesc: "30% chance to lower the target's Sp. Def by 1.",
 	},
 	/******************************************************************
 	Selfdestruct and Explosion:
-	- 120 and 180 base power autocrit
+	- 200 and 250 base power autocrit
 
 	Justification:
 	- these were nerfed unreasonably in gen 5, they're now somewhat
@@ -1035,18 +1211,20 @@ exports.BattleMovedex = {
 	******************************************************************/
 	selfdestruct: {
 		inherit: true,
-		basePower: 140,
+		basePower: 200,
 		accuracy: true,
-		willCrit: true
+		willCrit: true,
+		desc: "The user faints after using this move, even if this move fails for having no target. This move is prevented from executing if any active Pokemon has the Ability Damp. This move is a guaranteed critical hit.",
 	},
 	explosion: {
 		inherit: true,
-		basePower: 180,
+		basePower: 250,
 		accuracy: true,
-		willCrit: true
+		willCrit: true,
+		desc: "The user faints after using this move, even if this move fails for having no target. This move is prevented from executing if any active Pokemon has the Ability Damp. This move is a guaranteed critical hit.",
 	},
 	/******************************************************************
-	Scald:
+	Scald and Steam Eruption:
 	- base power not affected by weather
 	- 60% burn in sun
 
@@ -1055,13 +1233,28 @@ exports.BattleMovedex = {
 	******************************************************************/
 	scald: {
 		inherit: true,
-		onModifyMove: function(move) {
+		onModifyMove: function (move) {
 			switch (this.effectiveWeather()) {
 			case 'sunnyday':
+				// @ts-ignore
 				move.secondary.chance = 60;
 				break;
 			}
-		}
+		},
+		desc: "Has a 30% chance to burn the target. The target thaws out if it is frozen. If the weather is set to Sunny Day, there is a 60% chance to burn the target.",
+	},
+	steameruption: {
+		inherit: true,
+		accuracy: 100,
+		onModifyMove: function (move) {
+			switch (this.effectiveWeather()) {
+			case 'sunnyday':
+				// @ts-ignore
+				move.secondary.chance = 60;
+				break;
+			}
+		},
+		desc: "Has a 30% chance to burn the target. The target thaws out if it is frozen. If the weather is set to Sunny Day, there is a 60% chance to burn the target.",
 	},
 	/******************************************************************
 	High Jump Kick:
@@ -1072,7 +1265,7 @@ exports.BattleMovedex = {
 	******************************************************************/
 	highjumpkick: {
 		inherit: true,
-		basePower: 100
+		basePower: 100,
 	},
 	/******************************************************************
 	Echoed Voice:
@@ -1083,36 +1276,40 @@ exports.BattleMovedex = {
 	******************************************************************/
 	echoedvoice: {
 		inherit: true,
-		accuracy: 100,
 		basePower: 80,
-		basePowerCallback: function() {
+		basePowerCallback: function () {
 			return 80;
 		},
-		category: "Special",
 		isViable: true,
-		priority: 0,
-		isNotProtectable: true,
-		affectedByImmunities: false,
-		onHit: function(target, source) {
-			source.side.addSideCondition('futuremove');
-			if (source.side.sideConditions['futuremove'].positions[source.position]) {
+		ignoreImmunity: true,
+		onHit: function (target, source) {
+			target.side.addSideCondition('futuremove');
+			if (target.side.sideConditions['futuremove'].positions[target.position]) {
 				return false;
 			}
-			source.side.sideConditions['futuremove'].positions[source.position] = {
+			target.side.sideConditions['futuremove'].positions[target.position] = {
 				duration: 3,
 				move: 'echoedvoice',
-				targetPosition: target.position,
 				source: source,
 				moveData: {
+					id: 'echoedvoice',
+					name: "Echoed Voice",
+					accuracy: 100,
 					basePower: 80,
 					category: "Special",
-					type: 'Normal'
-				}
+					priority: 0,
+					flags: {},
+					ignoreImmunity: false,
+					effectType: 'Move',
+					isFutureMove: true,
+					type: 'Normal',
+				},
 			};
-			this.add('-start', source, 'Echoed Voice');
+			this.add('-start', source, 'move: Echoed Voice');
+			return null;
 		},
-		target: "normal",
-		type: "Normal"
+		desc: "Deals damage two turns after this move is used. At the end of that turn, the damage is calculated at that time and dealt to the Pokemon at the position the target had when the move was used. If the user is no longer active at the time, damage is calculated based on the user's natural Special Attack stat, types, and level, with no boosts from its held item or Ability. Fails if this move or Future Sight is already in effect for the target's position.",
+		shortDesc: "Hits two turns after being used.",
 	},
 	/******************************************************************
 	Rapid Spin, Rock Throw:
@@ -1128,37 +1325,40 @@ exports.BattleMovedex = {
 	rapidspin: {
 		inherit: true,
 		basePower: 30,
-		onBasePower: function(power, user) {
-			var doubled = false;
+		onBasePower: function (power, user) {
+			let doubled = false;
 			if (user.removeVolatile('leechseed')) {
-				this.add('-end', user, 'Leech Seed', '[from] move: Rapid Spin', '[of] '+user);
+				this.add('-end', user, 'Leech Seed', '[from] move: Rapid Spin', '[of] ' + user);
 				doubled = true;
 			}
-			var sideConditions = {spikes:1, toxicspikes:1, stealthrock:1};
-			for (var i in sideConditions) {
-				if (user.side.removeSideCondition(i)) {
-					this.add('-sideend', user.side, this.getEffect(i).name, '[from] move: Rapid Spin', '[of] '+user);
+			let sideConditions = ['spikes', 'toxicspikes', 'stealthrock'];
+			for (let condition in sideConditions) {
+				if (user.side.removeSideCondition(condition)) {
+					this.add('-sideend', user.side, this.getEffect(condition).name, '[from] move: Rapid Spin', '[of] ' + user);
 					doubled = true;
 				}
 			}
 			if (user.volatiles['partiallytrapped']) {
-				this.add('-remove', user, user.volatiles['partiallytrapped'].sourceEffect.name, '[from] move: Rapid Spin', '[of] '+user, '[partiallytrapped]');
+				this.add('-remove', user, user.volatiles['partiallytrapped'].sourceEffect.name, '[from] move: Rapid Spin', '[of] ' + user, '[partiallytrapped]');
 				doubled = true;
 				delete user.volatiles['partiallytrapped'];
 			}
 			if (doubled) return power * 2;
 		},
-		self: undefined
+		self: undefined,
+		desc: "If this move is successful the user removes hazards before it attacks, the effects of Leech Seed and partial-trapping moves end for the user, and all hazards are removed from the user's side of the field. This move does double the damage, if a hazard is removed.",
 	},
 	rockthrow: {
 		inherit: true,
 		accuracy: 100,
-		onBasePower: function(power, user) {
+		onBasePower: function (power, user) {
 			if (user.side.removeSideCondition('stealthrock')) {
-				this.add('-sideend', user.side, "Stealth Rock", '[from] move: Rapid Spin', '[of] '+user);
+				this.add('-sideend', user.side, "Stealth Rock", '[from] move: Rapid Spin', '[of] ' + user);
 				return power * 2;
 			}
-		}
+		},
+		desc: "This move attempts to remove Stealth Rocks from the user's side, if Stealth Rocks are removed this move does double the damage.",
+		shortDesc: "Frees the user of Stealth Rock, does 2x damage if it does.",
 	},
 	/******************************************************************
 	New feature: Signature Pokemon
@@ -1171,233 +1371,298 @@ exports.BattleMovedex = {
 	******************************************************************/
 	firefang: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'flareon') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'flareon') return this.chainModify(1.5);
 		},
 		accuracy: 100,
 		secondaries: [
-			{chance:20, status:'brn'},
-			{chance:30, volatileStatus:'flinch'}
-		]
+			{chance: 20, status: 'brn'},
+			{chance: 30, volatileStatus: 'flinch'},
+		],
+		desc: "Has a 20% chance to burn the target and a 30% chance to flinch it. If the user is a Flareon, this move does 1.5x more damage.",
+		shortDesc: "20% chance to burn. 30% chance to flinch.",
 	},
 	icefang: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'walrein') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'walrein') return this.chainModify(1.5);
 		},
 		accuracy: 100,
 		secondaries: [
-			{chance:20, status:'frz'},
-			{chance:30, volatileStatus:'flinch'}
-		]
+			{chance: 20, status: 'frz'},
+			{chance: 30, volatileStatus: 'flinch'},
+		],
+		desc: "Has a 20% chance to freeze the target and a 30% chance to flinch it. If the user is a Walrein, this move does 1.5x more damage.",
+		shortDesc: "20% chance to freeze. 30% chance to flinch.",
 	},
 	thunderfang: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'luxray') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'luxray') return this.chainModify(1.5);
 		},
 		accuracy: 100,
 		secondaries: [
-			{chance:20, status:'par'},
-			{chance:30, volatileStatus:'flinch'}
-		]
+			{chance: 20, status: 'par'},
+			{chance: 30, volatileStatus: 'flinch'},
+		],
+		desc: "Has a 20% chance to paralyze the target and a 30% chance to flinch it. If the user is a Luxray, this move does 1.5x more damage.",
+		shortDesc: "20% chance to paralyze. 30% chance to flinch.",
 	},
 	poisonfang: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'drapion') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'drapion') return this.chainModify(1.5);
 		},
 		accuracy: 100,
 		secondaries: [
-			{chance:100, status:'tox'},
-			{chance:30, volatileStatus:'flinch'}
-		]
+			{chance: 100, status: 'tox'},
+			{chance: 30, volatileStatus: 'flinch'},
+		],
+		desc: "Has a 100% chance to badly poison the target and a 30% chance to flinch it. If the user is a Drapion, this move does 1.5x more damage.",
+		shortDesc: "100% chance to badly poison. 30% chance to flinch.",
 	},
 	poisontail: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'seviper') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'seviper') return this.chainModify(1.5);
 		},
 		accuracy: 100,
 		secondary: {
 			chance: 60,
-			status: 'tox'
-		}
+			status: 'tox',
+		},
+		desc: "Has a 60% chance to badly poison the target and a higher chance for a critical hit. If the user is a Seviper, this move does 1.5x more damage.",
+		shortDesc: "High critical hit ratio. 60% chance to badly poison.",
+	},
+	slash: {
+		inherit: true,
+		basePower: 60,
+		onBasePower: function (power, user) {
+			if (user.template.id === 'persian') return this.chainModify(1.5);
+		},
+		secondary: {
+			chance: 30,
+			boosts: {
+				def: -1,
+			},
+		},
+		desc: "Has a higher chance for a critical hit. 30% chance to lower the target's Defense by one stage. If the user is a Persian, this move does 1.5x more damage.",
+		shortDesc: "High critical hit ratio. 30% chance to lower Def by 1.",
 	},
 	sludge: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'muk') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'muk') return this.chainModify(1.5);
 		},
 		secondary: {
 			chance: 100,
-			status: 'psn'
-		}
+			status: 'psn',
+		},
+		desc: "Has a 100% chance to poison the target. If the user is a Muk, this move does 1.5x more damage.",
+		shortDesc: "100% chance to poison the target.",
 	},
 	smog: {
 		inherit: true,
 		basePower: 75,
 		accuracy: 100,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'weezing') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'weezing') return this.chainModify(1.5);
 		},
 		secondary: {
 			chance: 100,
-			status: 'psn'
-		}
+			status: 'psn',
+		},
+		desc: "Has a 100% chance to poison the target. If the user is a Weezing, this move does 1.5x more damage.",
+		shortDesc: "100% chance to poison the target.",
 	},
 	flamecharge: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'rapidash') return power * 1.5;
-		}
+		onBasePower: function (power, user) {
+			if (user.template.id === 'rapidash') return this.chainModify(1.5);
+		},
+		desc: "Has a 100% chance to raise the user's Speed by 1 stage. If the user is a Rapidash, this move does 1.5x more damage.",
 	},
 	flamewheel: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'darmanitan') return power * 1.5;
-		}
+		onBasePower: function (power, user) {
+			if (user.template.id === 'darmanitan') return this.chainModify(1.5);
+		},
+		desc: "Has a 10% chance to burn the target. If the user is a Darmanitan, this move does 1.5x more damage.",
 	},
 	spark: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'eelektross') return power * 1.5;
-		}
+		onBasePower: function (power, user) {
+			if (user.template.id === 'eelektross') return this.chainModify(1.5);
+		},
+		desc: "Has a 30% chance to paralyze the target. If the user is an Eelektross, this move does 1.5x more damage.",
+	},
+	triplekick: {
+		inherit: true,
+		onBasePower: function (power, user) {
+			if (user.template.id === 'hitmontop') return this.chainModify(1.5);
+		},
+		accuracy: true,
+		desc: "Hits three times. Power increases to 20 for the second hit and 30 for the third. This move checks accuracy for each hit, and the attack ends if the target avoids any of the hits. If one of the hits breaks the target's substitute, it will take damage for the remaining hits. If the user has the Ability Skill Link, this move will always hit three times. If the user is a Hitmontop, this move does 1.5x more damage.",
 	},
 	bubblebeam: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'kingdra') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'kingdra') return this.chainModify(1.5);
 		},
 		secondary: {
 			chance: 30,
 			boosts: {
-				spe: -1
-			}
-		}
+				spe: -1,
+			},
+		},
+		desc: "Has a 30% chance to lower the target's Speed by 1 stage. If the user is a Kingdra, this move does 1.5x more damage.",
+		shortDesc: "30% chance to lower the target's Speed by 1.",
 	},
 	electroweb: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'galvantula') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'galvantula') return this.chainModify(1.5);
 		},
-		accuracy: 100
+		desc: "Has a 100% chance to lower the target's Speed by 1 stage. If the user is a Galvantula, this move does 1.5x more damage.",
+		accuracy: 100,
 	},
 	gigadrain: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'beautifly') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'beautifly') return this.chainModify(1.5);
 		},
-		accuracy: 100
+		desc: "The user recovers 1/2 the HP lost by the target, rounded half up. If Big Root is held by the user, the HP recovered is 1.3x normal, rounded half down. If the user is a Beautifly, this move does 1.5x more damage.",
+		accuracy: 100,
 	},
 	icywind: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'glaceon') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'glaceon') return this.chainModify(1.5);
 		},
-		accuracy: 100
+		desc: "Has a 100% chance to lower the target's Speed by 1 stage. If the user is a Glaceon, this move does 1.5x more damage.",
+		accuracy: 100,
 	},
 	mudshot: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'swampert') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'swampert') return this.chainModify(1.5);
 		},
-		accuracy: 100
+		desc: "Has a 100% chance to lower the target's Speed by 1 stage. If the user is a Swampert, this move does 1.5x more damage.",
+		accuracy: 100,
 	},
 	glaciate: {
 		inherit: true,
 		basePower: 80,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'kyurem') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'kyurem') return this.chainModify(1.5);
 		},
-		accuracy: 100
+		desc: "Has a 100% chance to lower the target's Speed by 1 stage. If the user is a Kyurem, this move does 1.5x more damage.",
+		accuracy: 100,
 	},
 	octazooka: {
 		inherit: true,
 		basePower: 75,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'octillery') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'octillery') return this.chainModify(1.5);
 		},
 		accuracy: 90,
 		secondary: {
 			chance: 100,
 			boosts: {
-				accuracy: -1
-			}
-		}
+				accuracy: -1,
+			},
+		},
+		desc: "Has a 100% chance to lower the target's accuracy by 1 stage. If the user is a Octillery, this move does 1.5x more damage.",
+		shortDesc: "100% chance to lower the target's accuracy by 1.",
 	},
 	leaftornado: {
 		inherit: true,
 		basePower: 75,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'serperior') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'serperior') return this.chainModify(1.5);
 		},
 		accuracy: 90,
 		secondary: {
 			chance: 100,
 			boosts: {
-				accuracy: -1
-			}
-		}
+				accuracy: -1,
+			},
+		},
+		desc: "Has a 100% chance to lower the target's accuracy by 1 stage. If the user is a Serperior, this move does 1.5x more damage.",
+		shortDesc: "100% chance to lower the target's accuracy by 1.",
 	},
 	iceshard: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'weavile') return power * 1.5;
-		}
+		onBasePower: function (power, user) {
+			if (user.template.id === 'weavile') return this.chainModify(1.5);
+		},
+		desc: "If the user is a Weavile, this move does 1.5x more damage.",
 	},
 	aquajet: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'sharpedo') return power * 1.5;
-		}
+		onBasePower: function (power, user) {
+			if (user.template.id === 'sharpedo') return this.chainModify(1.5);
+		},
+		desc: "If the user is a Sharpedo, this move does 1.5x more damage.",
 	},
 	machpunch: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'hitmonchan') return power * 1.5;
-		}
+		onBasePower: function (power, user) {
+			if (user.template.id === 'hitmonchan') return this.chainModify(1.5);
+		},
+		desc: "If the user is a Hitmonchan, this move does 1.5x more damage.",
 	},
 	shadowsneak: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'banette') return power * 1.5;
-		}
+		onBasePower: function (power, user) {
+			if (user.template.id === 'banette') return this.chainModify(1.5);
+		},
+		desc: "If the user is a Banette, this move does 1.5x more damage.",
 	},
 	steelwing: {
 		inherit: true,
 		basePower: 60,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'skarmory') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'skarmory') return this.chainModify(1.5);
 		},
 		accuracy: 100,
 		secondary: {
 			chance: 50,
 			self: {
 				boosts: {
-					def: 1
-				}
-			}
-		}
+					def: 1,
+				},
+			},
+		},
+		desc: "Has a 50% chance to raise the user's Defense by 1 stage. If the user is a Skarmory, this move does 1.5x more damage.",
+		shortDesc: "50% chance to raise the user's Defense by 1.",
 	},
 	surf: {
 		inherit: true,
-		onBasePower: function(power, user) {
-			if (user.template.id === 'masquerain') return power * 1.5;
+		onBasePower: function (power, user) {
+			if (user.template.id === 'masquerain') return this.chainModify(1.5);
 		},
 		secondary: {
 			chance: 10,
 			boosts: {
-				spe: -1
-			}
-		}
+				spe: -1,
+			},
+		},
+		desc: "Damage doubles if the target is using Dive. 10% chance to lower the target's Speed by one stage. If the user is a Masquerain, this move does 1.5x more damage.",
+		shortDesc: "Power doubles on Dive. 10% chance to lower Spe by 1.",
+	},
+	hiddenpower: {
+		inherit: true,
+		onBasePower: function (power, user) {
+			if (user.template.id === 'unown') return this.chainModify(1.5);
+		},
 	},
 	/******************************************************************
 	Moves with accuracy not a multiple of 10%
@@ -1410,141 +1675,247 @@ exports.BattleMovedex = {
 	- Rock Slide is included for being similar enough to Air Slash
 	- Charge Beam is included because its 30% chance of no boost is enough
 	******************************************************************/
+	jumpkick: {
+		inherit: true,
+		accuracy: 100,
+	},
 	razorshell: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	drillrun: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	vcreate: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	aeroblast: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	sacredfire: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	spacialrend: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
+	},
+	originpulse: {
+		inherit: true,
+		accuracy: 90,
+	},
+	precipiceblades: {
+		inherit: true,
+		accuracy: 90,
 	},
 	airslash: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	rockslide: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	chargebeam: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	aircutter: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	furycutter: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
+	},
+	flyingpress: {
+		inherit: true,
+		accuracy: 100,
 	},
 	crushclaw: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	razorleaf: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	stringshot: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	metalclaw: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
+	},
+	diamondstorm: {
+		inherit: true,
+		accuracy: 100,
 	},
 	snarl: {
 		inherit: true,
-		accuracy: 100
+		accuracy: 100,
 	},
 	powerwhip: {
 		inherit: true,
-		accuracy: 90
+		accuracy: 90,
 	},
 	seedflare: {
 		inherit: true,
-		accuracy: 90
+		accuracy: 90,
+	},
+	willowisp: {
+		inherit: true,
+		accuracy: 90,
 	},
 	meteormash: {
 		inherit: true,
-		accuracy: 90
+		accuracy: 90,
 	},
 	boltstrike: {
 		inherit: true,
 		accuracy: 90,
 		secondary: {
 			chance: 30,
-			status: 'par'
-		}
+			status: 'par',
+		},
+		desc: "Has a 30% chance to paralyze the target.",
+		shortDesc: "30% chance to paralyze the target.",
 	},
 	blueflare: {
 		inherit: true,
 		accuracy: 90,
 		secondary: {
 			chance: 30,
-			status: 'brn'
-		}
+			status: 'brn',
+		},
+		desc: "Has a 30% chance to burn the target.",
+		shortDesc: "30% chance to burn the target.",
+	},
+	dragonrush: {
+		inherit: true,
+		accuracy: 80,
+	},
+	rocktomb: {
+		inherit: true,
+		accuracy: 100,
 	},
 	fireblast: {
 		inherit: true,
 		accuracy: 80,
 		secondary: {
 			chance: 20,
-			status: 'brn'
-		}
+			status: 'brn',
+		},
+		desc: "Has a 20% chance to burn the target.",
+		shortDesc: "20% chance to burn the target.",
+	},
+	irontail: {
+		inherit: true,
+		accuracy: 80,
 	},
 	magmastorm: {
 		inherit: true,
-		accuracy: 80
+		accuracy: 80,
+	},
+	megahorn: {
+		inherit: true,
+		accuracy: 90,
+	},
+	megapunch: {
+		inherit: true,
+		accuracy: 90,
 	},
 	megakick: {
 		inherit: true,
-		accuracy: 80
+		accuracy: 80,
+	},
+	slam: {
+		inherit: true,
+		accuracy: 80,
+	},
+	rollingkick: {
+		inherit: true,
+		accuracy: 90,
+	},
+	takedown: {
+		inherit: true,
+		accuracy: 90,
+	},
+	mudbomb: {
+		inherit: true,
+		accuracy: 90,
+	},
+	mirrorshot: {
+		inherit: true,
+		accuracy: 90,
+	},
+	rockclimb: {
+		inherit: true,
+		accuracy: 90,
 	},
 	poisonpowder: {
 		inherit: true,
-		accuracy: 80
+		accuracy: 80,
 	},
 	stunspore: {
 		inherit: true,
-		accuracy: 80
+		accuracy: 80,
 	},
 	sleeppowder: {
 		inherit: true,
-		accuracy: 80
+		accuracy: 80,
+	},
+	sweetkiss: {
+		inherit: true,
+		accuracy: 80,
 	},
 	lovelykiss: {
 		inherit: true,
-		accuracy: 80
+		accuracy: 80,
 	},
-	eggbomb: {
+	whirlpool: {
 		inherit: true,
-		accuracy: 80
+		accuracy: 90,
+	},
+	firespin: {
+		inherit: true,
+		accuracy: 90,
+	},
+	clamp: {
+		inherit: true,
+		accuracy: 90,
+	},
+	sandtomb: {
+		inherit: true,
+		accuracy: 90,
+	},
+	bind: {
+		inherit: true,
+		accuracy: 90,
 	},
 	grasswhistle: {
 		inherit: true,
-		accuracy: 60
+		accuracy: 60,
 	},
 	sing: {
 		inherit: true,
-		accuracy: 60
+		accuracy: 60,
+	},
+	supersonic: {
+		inherit: true,
+		accuracy: 60,
+	},
+	screech: {
+		inherit: true,
+		accuracy: 90,
+	},
+	metalsound: {
+		inherit: true,
+		accuracy: 90,
 	},
 	/******************************************************************
 	Signature moves and other moves with limited distribution:
@@ -1553,143 +1924,181 @@ exports.BattleMovedex = {
 	Justification:
 	- more metagame variety is always good
 	******************************************************************/
+	psychocut: {
+		inherit: true,
+		basePower: 90,
+	},
 	twineedle: {
 		inherit: true,
-		basePower: 50
+		accuracy: true,
+		basePower: 50,
 	},
 	drillpeck: {
 		inherit: true,
 		basePower: 100,
-		pp: 10
+		pp: 10,
 	},
 	needlearm: {
 		inherit: true,
 		basePower: 100,
-		pp: 10
+		pp: 10,
 	},
 	leafblade: {
 		inherit: true,
 		basePower: 100,
-		pp: 10
+		pp: 10,
 	},
 	attackorder: {
 		inherit: true,
 		basePower: 100,
-		pp: 10
+		pp: 10,
 	},
 	withdraw: {
 		inherit: true,
 		boosts: {
 			def: 1,
-			spd: 1
-		}
+			spd: 1,
+		},
+		desc: "Raises the user's Defense and Special Defense by 1 stage.",
+		shortDesc: "Raises the user's Def and SpD by 1.",
+	},
+	paraboliccharge: {
+		inherit: true,
+		basePower: 40,
+		secondary: {
+			chance: 100,
+			boosts: {
+				spa: -1,
+				spd: -1,
+			},
+			self: {
+				boosts: {
+					spa: 1,
+					spd: 1,
+				},
+			},
+		},
+		desc: "The user recovers 1/2 the HP lost by the target, rounded half up. If Big Root is held by the user, the HP recovered is 1.3x normal, rounded half down. 100% chance to lower the target's Special Attack and Special Defense by one stage, and boost the user's Special Attack and Special Defense by one stage.",
+	},
+	drainingkiss: {
+		inherit: true,
+		basePower: 40,
+		secondary: {
+			chance: 100,
+			boosts: {
+				spa: -1,
+				atk: -1,
+			},
+			self: {
+				boosts: {
+					spa: 1,
+					atk: 1,
+				},
+			},
+		},
+		desc: "The user recovers 3/4 the HP lost by the target, rounded half up. If Big Root is held by the user, the HP recovered is 1.3x normal, rounded half down. 100% chance to lower the target's Special Attack and Special Defense by one stage, and boost the user's Special Attack and Special Defense by one stage.",
 	},
 	stomp: {
 		inherit: true,
 		basePower: 100,
 		accuracy: true,
-		pp: 10
+		pp: 10,
 	},
 	steamroller: {
 		inherit: true,
 		basePower: 100,
 		accuracy: true,
-		pp: 10
+		pp: 10,
 	},
 	crabhammer: {
 		inherit: true,
 		basePower: 100,
-		accuracy: 100
+		accuracy: 100,
 	},
 	autotomize: {
 		inherit: true,
 		boosts: {
-			spe: 3
-		}
+			spe: 3,
+		},
+		desc: "Raises the user's Speed by 3 stages. If the user's Speed was changed, the user's weight is reduced by 100kg as long as it remains active. This effect is stackable but cannot reduce the user's weight to less than 0.1kg.",
+		shortDesc: "Raises the user's Speed by 3; user loses 100 kg.",
 	},
 	dizzypunch: {
 		inherit: true,
 		basePower: 90,
 		secondary: {
 			chance: 50,
-			volatileStatus: 'confusion'
+			volatileStatus: 'confusion',
 		},
+		desc: "Has a 50% chance to confuse the target.",
+		shortDesc: "50% chance to confuse the target.",
 	},
 	nightdaze: {
 		inherit: true,
 		accuracy: 100,
-		onModifyMove: function(move, user) {
+		onModifyMove: function (move, user) {
 			if (user.illusion) {
-				var illusionMoves = user.illusion.moves.filter(function(illusionMove) {
-					var illusionMove = this.getMove(illusionMove);
-					return illusionMove.category !== 'Status';
-				}, this);
-				if (illusionMoves.length) move.name = this.getMove(illusionMoves.sample()).name;
+				let illusionMoves = user.illusion.moves.filter(move => this.getMove(move).category !== 'Status');
+				if (!illusionMoves.length) return;
+				move.name = this.getMove(this.sample(illusionMoves)).name;
 			}
-		}
+		},
+		desc: "Has a 40% chance to lower the target's accuracy by 1 stage. If Illusion is active, displays as a random non-Status move in the copied Pokémon's moveset.",
 	},
 	muddywater: {
 		inherit: true,
 		basePower: 85,
 		accuracy: 100,
-		secondary: {
-			chance: 30,
-			boosts: {
-				accuracy: -1
-			}
-		}
 	},
 	powergem: {
 		inherit: true,
 		basePower: 40,
 		accuracy: true,
-		multihit: [2,2]
+		multihit: [2, 2],
+		desc: "Hits twice. If the first hit breaks the target's substitute, it will take damage for the second hit.",
+		shortDesc: "Hits 2 times in one turn.",
 	},
 	acid: {
 		inherit: true,
-		affectedByImmunities: false
+		ignoreImmunity: true,
 	},
 	acidspray: {
 		inherit: true,
-		affectedByImmunities: false
+		ignoreImmunity: true,
 	},
 	eggbomb: {
 		inherit: true,
 		accuracy: 80,
-		basePower: 40,
-		willCrit: true
+		basePower: 60,
+		willCrit: true,
+		desc: "This move is always a critical hit unless the target is under the effect of Lucky Chant or has the Abilities Battle Armor or Shell Armor.",
+		shortDesc: "Always results in a critical hit.",
 	},
 	sacredsword: {
 		inherit: true,
-		basePower: 95
+		basePower: 95,
 	},
 	triattack: {
-		num: 161,
+		inherit: true,
 		accuracy: true,
 		basePower: 30,
-		category: "Special",
 		desc: "Hits 3 times. Has a 10% chance to burn, paralyze or freeze the target each time.",
-		shortDesc: "hits 3x; 10% chance to paralyze/burn/freeze.",
-		id: "triattack",
-		name: "Tri Attack",
-		pp: 10,
-		isViable: true,
-		priority: 0,
-		multihit: [3,3],
+		shortDesc: "Hits 3x; 10% chance to paralyze/burn/freeze.",
+		multihit: [3, 3],
 		secondary: {
 			chance: 10,
-			onHit: function(target, source) {
-				var result = this.random(3);
-				if (result===0) {
+			onHit: function (target, source) {
+				let result = this.random(3);
+				if (result === 0) {
 					target.trySetStatus('brn', source);
-				} else if (result===1) {
+				} else if (result === 1) {
 					target.trySetStatus('par', source);
 				} else {
 					target.trySetStatus('frz', source);
 				}
-			}
+			},
 		},
-		target: "normal",
-		type: "Normal"
-	}
+	},
 };
+
+exports.BattleMovedex = BattleMovedex;
