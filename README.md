@@ -1,19 +1,43 @@
 Pokémon Showdown
 ========================================================================
 
-Pokémon Showdown is a simulator of Pokémon battles. It currently supports singles battles in Generations 4-5 (HGSS, BW, BW2).
+Navigation: [Website][1] | **Server repository** | [Client repository][2] | [Dex repository][3]
+
+  [1]: http://pokemonshowdown.com/
+  [2]: https://github.com/Zarel/Pokemon-Showdown-Client
+  [3]: https://github.com/Zarel/Pokemon-Showdown-Dex
+
+[![Build Status](https://api.travis-ci.com/Zarel/Pokemon-Showdown.svg)](https://travis-ci.com/Zarel/Pokemon-Showdown)
+[![Dependency Status](https://david-dm.org/zarel/Pokemon-Showdown.svg)](https://david-dm.org/zarel/Pokemon-Showdown)
+[![devDependency Status](https://david-dm.org/zarel/Pokemon-Showdown/dev-status.svg)](https://david-dm.org/zarel/Pokemon-Showdown?type=dev)
+
+Introduction
+------------------------------------------------------------------------
+
+This is the source code for the game server of [Pokémon Showdown][4], a website for Pokémon battling. Pokémon Showdown simulates singles, doubles and triples battles in all the games out so far (Generations 1 through 7).
 
 This repository contains the files needed to set up your own Pokémon Showdown server. Note that to set up a server, you'll also need a server computer.
 
-You can use your own computer as a server, but for other people to connect to your computer, you'll need to expose a port (default is 8000 but you can choose a different one) to connect to, by setting up any firewalls you might have to allow that port through to you (this sometimes isn't possible on certain internet connections).
+You can use your own computer as a server, but for other people to connect to your computer, you'll need to expose a port (default is 8000 but you can choose a different one) to connect to, which sometimes requires [port forwarding][5]. Note that some internet providers don't let you host a server at all, in which case you'll have to rent a VPS to use as a server.
+
+  [4]: http://pokemonshowdown.com/
+  [5]: http://en.wikipedia.org/wiki/Port_forwarding
 
 
 Installing
 ------------------------------------------------------------------------
 
-Pokémon Showdown requires [node.js][1], either v0.6.3 through v0.8.22, or v0.10.2 and up. Install `node.js` if you don't have it yet; the latest stable version is a good choice to install.
+    ./pokemon-showdown
 
-Next, obtain a copy of Pokémon Showdown. If you're reading this outside of GitHub, you've probably already done this. If you're reading this in GitHub, there's a "Clone" button in the bottom of the right sidebar, or if you're really lazy, there's a "ZIP" download button. I recommend the Clone method - it's more time-consuming to set up, but much easier to update.
+(Requires Node.js 8+)
+
+
+Detailed installation instructions
+------------------------------------------------------------------------
+
+Pokémon Showdown requires you to have [Node.js][6] installed, 8.x or later (7.7 or later can work, but you might as well be on the latest stable).
+
+Next, obtain a copy of Pokémon Showdown. If you're reading this outside of GitHub, you've probably already done this. If you're reading this in GitHub, there's a "Clone or download" button near the top right (it's green). I recommend the "Open in Desktop" method - you need to install GitHub Desktop which is more work than "Download ZIP", but it makes it much easier to update in the long run (it lets you use the `/updateserver` command).
 
 Pokémon Showdown is installed and run using a command line. In Mac OS X, open `Terminal` (it's in Utilities). In Windows, open `Command Prompt` (type `cmd` into the Start menu and it should be the first result). Type this into the command line:
 
@@ -23,21 +47,19 @@ Replace `LOCATION` with the location Pokémon Showdown is in (ending up with, fo
 
 This will set your command line's location to Pokémon Showdown's folder. You'll have to do this each time you open a command line to run commands for Pokémon Showdown.
 
-To install dependencies, run the command:
-
-    npm install
-
 Copy `config/config-example.js` into `config/config.js`, and edit as you please.
 
 Congratulations, you're done setting up Pokémon Showdown.
 
 Now, to start Pokémon Showdown, run the command:
 
-    node app.js
+    node pokemon-showdown
+
+(If you're not on Windows, we recommend doing `./pokemon-showdown` instead.)
 
 You can also specify a port:
 
-    node app.js 8000
+    node pokemon-showdown 8000
 
 Visit your server at `http://SERVER:8000`
 
@@ -47,11 +69,10 @@ Yes, you can test even if you are behind a NAT without port forwarding: `http://
 
 You will be redirected to `http://SERVER.psim.us`. The reason your server is visited through `psim.us` is to make it more difficult for servers to see a user's password in any form, by handling logins globally. You can embed this in an `iframe` in your website if the URL is a big deal with you.
 
-If you truly want to host the client yourself, there is [a repository for the Pokémon Showdown Client][3]. It's not recommended for beginners, though.
+If you truly want to host the client yourself, there is [a repository for the Pokémon Showdown Client][7]. It's not recommended for beginners, though.
 
-  [1]: http://nodejs.org/
-  [2]: https://github.com/joyent/node/pull/5016
-  [3]: https://github.com/Zarel/Pokemon-Showdown-Client
+  [6]: https://nodejs.org/
+  [7]: https://github.com/Zarel/Pokemon-Showdown-Client
 
 
 Setting up an Administrator account
@@ -69,7 +90,7 @@ Replace `USER` with the username that you would like to become an Administrator.
 
 This username must be registered. If you do not have a registered account, you can create one using the Register button in the settings menu (it looks like a gear) in the upper-right of Pokémon Showdown.
 
-Once you're an administrator, you can promote/demote others easily with the `/admin`, `/leader`, `/mod`, etc commands.
+Once you're an administrator, you can promote/demote others easily with the `/globaladmin`, `/globalleader`, `/globalmod`, etc commands.
 
 
 Browser support
@@ -79,33 +100,39 @@ Pokémon Showdown currently supports, in order of preference:
 
  - Chrome
  - Firefox
- - Safari
- - Chrome/Firefox/Safari for various mobile devices
  - Opera
- - Firefox for Android
+ - Safari 5+
+ - IE11+
+ - Chrome/Firefox/Safari for various mobile devices
+
+Pokémon Showdown is usable, but expect degraded performance and certain features not to work in:
+
+ - Safari 4+
  - IE9+
 
-IE8 support can technically be added without too much difficulty, but it doesn't run PS fast enough to be usable.
-
-As for older browsers (Firefox 3.6), I won't go out of my way to support them, but if there's a simple fix, you can suggest it to me and I'll implement it.
+Pokémon Showdown is mostly developed on Chrome, and Chrome or the desktop client is required for certain features like dragging-and-dropping teams from PS to your computer. However, bugs reported on any supported browser will usually be fixed pretty quickly.
 
 
 Community
 ------------------------------------------------------------------------
 
-The Pokémon Showdown development IRC channel is `#showdown` at `irc.synirc.net`.
+PS has a built-in chat service. Join our main server to talk to us!
 
-You can also visit the [Pokémon Showdown forums][4] for discussion and help.
+You can also visit the [Pokémon Showdown forums][8] for discussion and help.
 
-  [4]: http://pokemonshowdown.com/forums/
+  [8]: https://www.smogon.com/forums/forums/pok%C3%A9mon-showdown.209/
+
+If you'd like to contribute to programming and don't know where to start, feel free to check out [Ideas for New Developers][9].
+
+  [9]: https://github.com/Zarel/Pokemon-Showdown/issues/2444
 
 
 License
 ------------------------------------------------------------------------
 
-Pokémon Showdown's server is distributed under the terms of the [MIT License][5].
+Pokémon Showdown's server is distributed under the terms of the [MIT License][10].
 
-  [5]: https://github.com/Zarel/Pokemon-Showdown/blob/master/LICENSE
+  [10]: https://github.com/Zarel/Pokemon-Showdown/blob/master/LICENSE
 
 
 Credits
@@ -113,25 +140,45 @@ Credits
 
 Owner
 
-- Guangcong Luo [Zarel] - Development, Design
+- Guangcong Luo [Zarel] - Development, Design, Sysadmin
 
 Staff
 
-- Bill Meltsner [bmelts] - Development
-- Juanma Serrano [Joim] - Development
+- Chris Monsanto [chaos] - Sysadmin
+- Leonardo Julca [Slayer95] - Development
+- Mathieu Dias-Martins [Marty-D] - Research (game mechanics), Development
+- [The Immortal] - Development
 
 Retired Staff
 
-- Cathy J. Fitzpatrick [cathyjf] - Development
-- Mathieu Dias-Martins [Marty-D] - Research (game mechanics), Development
+- Bill Meltsner [bmelts] - Development, Sysadmin
+- Cathy J. Fitzpatrick [cathyjf] - Development, Sysadmin
+- Hugh Gordon [V4] - Research (game mechanics), Development
+- Juanma Serrano [Joim] - Development, Sysadmin
+
+Major Contributors
+
+- Bär Halberkamp [bumbadadabum] - Development
+- Kevin Lau [Ascriptmaster] - Development, Art (battle animations)
+- Konrad Borowski [xfix] - Development
+- Quinton Lee [sirDonovan] - Development
 
 Contributors
 
 - Andrew Goodsell [Zracknel] - Art (battle weather backdrops)
+- Avery Zimmer [Lyren, SolarisFox] - Development
+- Ben Davies [Morfent] - Development
+- Ben Frengley [TalkTakesTime] - Development
 - Cody Thompson [Rising_Dusk] - Development
-- Hugh Gordon [V4] - Research (game mechanics), Development
-- Kyle Dove [Kyle_Dove] - Art (battle backdrops)
+- [Honko] - Development
+- Ian Clail [Layell] - Art (battle graphics, sprites)
+- Jeremy Piemonte [panpawn] - Development
+- Kris Johnson [Kris] - Development
+- Neil Rashbrook [urkerab] - Development
 - Robin Vandenbrande [Quinella] - Development
-- Samuel Teo [Yilx] - Art (main background)
-- [The Immortal] - Development
-- Vivian Zou [Vtas] - Art (alternate main background)
+- [Ridaz] - Art (battle animations)
+- Tobias Mann [asgdf] - Development
+
+Special thanks
+
+- See http://pokemonshowdown.com/credits

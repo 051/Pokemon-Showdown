@@ -12,7 +12,7 @@
  * Users - from users.js
  *
  *   Most of the communication with users happens in users.js, we just
- *   forward messages between the client and users.js.
+ *   forward messages between the sockets.js and users.js.
  *
  * Rooms - from rooms.js
  *
@@ -20,659 +20,186 @@
  *   rooms.js. There's also a global room which every user is in, and
  *   handles miscellaneous things like welcoming the user.
  *
- * Tools - from tools.js
+ * Dex - from sim/dex.js
  *
- *   Handles getting data about Pokemon, items, etc. *
+ *   Handles getting data about Pokemon, items, etc.
  *
- * Simulator - from simulator.js
+ * Ladders - from ladders.js and ladders-remote.js
  *
- *   Used to access the simulator itself.
+ *   Handles Elo rating tracking for players.
  *
- * CommandParser - from command-parser.js
+ * Chat - from chat.js
  *
- *   Parses text commands like /me
+ *   Handles chat and parses chat commands like /me and /ban
  *
- * @license MIT license
+ * Sockets - from sockets.js
+ *
+ *   Used to abstract out network connections. sockets.js handles
+ *   the actual server and connection set-up.
+ *
+ * @license MIT
  */
 
-/*********************************************************
- * Make sure we have everything set up correctly
- *********************************************************/
+'use strict';
 
-// Make sure our dependencies are available, and install them if they
-// aren't
+// NOTE: This file intentionally doesn't use too many modern JavaScript
+// features, so that it doesn't crash old versions of Node.js, so we
+// can successfully print the "We require Node.js 8+" message.
 
-function runNpm(command) {
-	console.log('Running `npm ' + command + '`...');
-	var child_process = require('child_process');
-	var npm = child_process.spawn('npm', [command]);
-	npm.stdout.on('data', function(data) {
-		process.stdout.write(data);
-	});
-	npm.stderr.on('data', function(data) {
-		process.stderr.write(data);
-	});
-	npm.on('close', function(code) {
-		if (!code) {
-			child_process.fork('app.js').disconnect();
-		}
-	});
-}
-
+// Check for version and dependencies
 try {
-	require('sugar');
+	// I've gotten enough reports by people who don't use the launch
+	// script that this is worth repeating here
+	eval('{ let a = async () => {}; }');
 } catch (e) {
-	return runNpm('install');
+	throw new Error("We require Node.js version 8 or later; you're using " + process.version);
 }
-if (!Object.select) {
-	return runNpm('update');
-}
-
-// Make sure config.js exists, and copy it over from config-example.js
-// if it doesn't
-
-global.fs = require('fs');
-if (!('existsSync' in fs)) {
-	fs.existsSync = require('path').existsSync;
+try {
+	require.resolve('sockjs');
+} catch (e) {
+	throw new Error("Dependencies are unmet; run node pokemon-showdown before launching Pokemon Showdown again.");
 }
 
-// Synchronously, since it's needed before we can start the server
-if (!fs.existsSync('./config/config.js')) {
-	console.log("config.js doesn't exist - creating one with default settings...");
-	fs.writeFileSync('./config/config.js',
-		fs.readFileSync('./config/config-example.js')
-	);
-}
+const FS = require('./lib/fs');
 
 /*********************************************************
  * Load configuration
  *********************************************************/
+/*Script That Keeps Server Alive 24x7. HEROKU
+const http = require("http");
+setInterval(function() {
+    http.get("http://<yourapp>.herokuapp.com");
+}, 300000); // every 5 minutes (300000)*/
 
-global.config = require('./config/config.js');
+try {
+	// @ts-ignore This file doesn't exist on the repository, so Travis checks fail if this isn't ignored
+	require.resolve('./config/config');
+} catch (err) {
+	if (err.code !== 'MODULE_NOT_FOUND') throw err; // should never happen
+	throw new Error('config.js does not exist; run node pokemon-showdown to set up the default config file before launching Pokemon Showdown again.');
+}
+// @ts-ignore This file doesn't exist on the repository, so Travis checks fail if this isn't ignored
+global.Config = require('./config/config');
 
-var watchFile = function() {
-	try {
-		return fs.watchFile.apply(fs, arguments);
-	} catch (e) {
-		console.log('Your version of node does not support `fs.watchFile`');
-	}
-};
+global.Monitor = require('./monitor');
 
-if (config.watchconfig) {
-	watchFile('./config/config.js', function(curr, prev) {
-		if (curr.mtime <= prev.mtime) return;
+if (Config.watchconfig) {
+	let configPath = require.resolve('./config/config');
+	FS(configPath).onModify(() => {
 		try {
-			delete require.cache[require.resolve('./config/config.js')];
-			config = require('./config/config.js');
-			console.log('Reloaded config/config.js');
-		} catch (e) {}
+			delete require.cache[configPath];
+			global.Config = require('./config/config');
+			if (global.Users) Users.cacheGroupData();
+			Monitor.notice('Reloaded config/config.js');
+		} catch (e) {
+			Monitor.adminlog("Error reloading config/config.js: " + e.stack);
+		}
 	});
 }
-
-if (process.argv[2] && parseInt(process.argv[2])) {
-	config.port = parseInt(process.argv[2]);
-}
-
-global.ResourceMonitor = {
-	connections: {},
-	connectionTimes: {},
-	battles: {},
-	battleTimes: {},
-	battlePreps: {},
-	battlePrepTimes: {},
-	networkUse: {},
-	networkCount: {},
-	cmds: {},
-	cmdsTimes: {},
-	cmdsTotal: {lastCleanup: Date.now(), count: 0},
-	/**
-	 * Counts a connection. Returns true if the connection should be terminated for abuse.
-	 */
-	log: function(text) {
-		console.log(text);
-		if (Rooms.rooms.staff) Rooms.rooms.staff.add('||'+text);
-	},
-	countConnection: function(ip, name) {
-		var now = Date.now();
-		var duration = now - this.connectionTimes[ip];
-		name = (name ? ': '+name : '');
-		if (ip in this.connections && duration < 30*60*1000) {
-			this.connections[ip]++;
-			if (duration < 5*60*1000 && this.connections[ip] % 20 === 0) {
-				this.log('[ResourceMonitor] IP '+ip+' has connected '+this.connections[ip]+' times in the last '+duration.duration()+name);
-			} else if (this.connections[ip] % 60 == 0) {
-				this.log('[ResourceMonitor] IP '+ip+' has connected '+this.connections[ip]+' times in the last '+duration.duration()+name);
-			}
-		} else {
-			this.connections[ip] = 1;
-			this.connectionTimes[ip] = now;
-		}
-	},
-	/**
-	 * Counts a battle. Returns true if the connection should be terminated for abuse.
-	 */
-	countBattle: function(ip, name) {
-		var now = Date.now();
-		var duration = now - this.battleTimes[ip];
-		name = (name ? ': '+name : '');
-		if (ip in this.battles && duration < 30*60*1000) {
-			this.battles[ip]++;
-			if (duration < 5*60*1000 && this.battles[ip] % 15 == 0) {
-				this.log('[ResourceMonitor] IP '+ip+' has battled '+this.battles[ip]+' times in the last '+duration.duration()+name);
-			} else if (this.battles[ip] % 75 == 0) {
-				this.log('[ResourceMonitor] IP '+ip+' has battled '+this.battles[ip]+' times in the last '+duration.duration()+name);
-			}
-		} else {
-			this.battles[ip] = 1;
-			this.battleTimes[ip] = now;
-		}
-	},
-	/**
-	 * Counts battle prep. Returns true if too much
-	 */
-	countPrepBattle: function(ip) {
-		var now = Date.now();
-		var duration = now - this.battlePrepTimes[ip];
-		if (ip in this.battlePreps && duration < 3*60*1000) {
-			this.battlePreps[ip]++;
-			if (this.battlePreps[ip] > 6) {
-				return true;
-			}
-		} else {
-			this.battlePreps[ip] = 1;
-			this.battlePrepTimes[ip] = now;
-		}
-	},
-	/**
-	 * data
-	 */
-	countNetworkUse: function(size) {
-		if (this.activeIp in this.networkUse) {
-			this.networkUse[this.activeIp] += size;
-			this.networkCount[this.activeIp]++;
-		} else {
-			this.networkUse[this.activeIp] = size;
-			this.networkCount[this.activeIp] = 1;
-		}
-	},
-	writeNetworkUse: function() {
-		var buf = '';
-		for (var i in this.networkUse) {
-			buf += ''+this.networkUse[i]+'\t'+this.networkCount[i]+'\t'+i+'\n';
-		}
-		fs.writeFile('logs/networkuse.tsv', buf);
-	},
-	clearNetworkUse: function() {
-		this.networkUse = {};
-		this.networkCount = {};
-	},
-	/**
-	 * Counts roughly the size of an object to have an idea of the server load.
-	 */
-	sizeOfObject: function(object) {
-		var objectList = [];
-		var stack = [object];
-		var bytes = 0;
-
-		while (stack.length) {
-			var value = stack.pop();
-			if (typeof value === 'boolean') bytes += 4;
-			else if (typeof value === 'string') bytes += value.length * 2;
-			else if (typeof value === 'number') bytes += 8;
-			else if (typeof value === 'object' && objectList.indexOf( value ) === -1) {
-				objectList.push( value );
-				for (i in value) stack.push( value[ i ] );
-			}
-		}
-
-		return bytes;
-	},
-	/**
-	 * Controls the amount of times a cmd command is used
-	 */
-	countCmd: function(ip, name) {
-	 	var now = Date.now();
-		var duration = now - this.cmdsTimes[ip];
-		name = (name ? ': '+name : '');
-		if (!this.cmdsTotal) this.cmdsTotal = {lastCleanup: 0, count: 0};
-		if (now - this.cmdsTotal.lastCleanup > 60*1000) {
-			this.cmdsTotal.count = 0;
-			this.cmdsTotal.lastCleanup = now;
-		}
-		this.cmdsTotal.count++;
-		if (ip in this.cmds && duration < 60*1000) {
-			this.cmds[ip]++;
-			if (duration < 60*1000 && this.cmds[ip] % 5 === 0) {
-				if (this.cmds[ip] >= 3) {
-					if (this.cmds[ip] % 30 === 0) this.log('CMD command from '+ip+' blocked for '+this.cmds[ip]+'th use in the last '+duration.duration()+name);
-					return true;
-				}
-				this.log('[ResourceMonitor] IP '+ip+' has used CMD command '+this.cmds[ip]+' times in the last '+duration.duration()+name);
-			} else if (this.cmds[ip] % 15 === 0) {
-				this.log('CMD command from '+ip+' blocked for '+this.cmds[ip]+'th use in the last '+duration.duration()+name);
-				return true;
-			}
-		} else if (this.cmdsTotal.count > 8000) {
-			// One CMD check per user per minute on average (to-do: make this better)
-			this.log('CMD command for '+ip+' blocked because CMD has been used '+this.cmdsTotal.count+' times in the last minute.');
-			return true;
-		} else {
-			this.cmds[ip] = 1;
-			this.cmdsTimes[ip] = now;
-		}
-	}
-};
-
-/*********************************************************
- * Start our servers
- *********************************************************/
-
-// Static HTTP server
-
-// This handles the custom CSS and custom avatar features, and also
-// redirects yourserver:8001 to yourserver-8001.psim.us
-
-// It's optional if you don't need these features.
-
-var app = require('http').createServer();
-var appssl;
-if (config.ssl) {
-	appssl = require('https').createServer(config.ssl.options);
-}
-try {
-	(function() {
-		var nodestatic = require('node-static');
-		var cssserver = new nodestatic.Server('./config');
-		var avatarserver = new nodestatic.Server('./config/avatars');
-		var staticserver = new nodestatic.Server('./static');
-		var staticRequestHandler = function(request, response) {
-			request.resume();
-			request.addListener('end', function() {
-				if (config.customhttpresponse &&
-						config.customhttpresponse(request, response)) {
-					return;
-				}
-				var server;
-				if (request.url === '/custom.css') {
-					server = cssserver;
-				} else if (request.url.substr(0, 9) === '/avatars/') {
-					request.url = request.url.substr(8);
-					server = avatarserver;
-				} else {
-					if (/^\/([A-Za-z0-9][A-Za-z0-9-]*)\/?$/.test(request.url)) {
-						request.url = '/';
-					}
-					server = staticserver;
-				}
-				server.serve(request, response, function(e, res) {
-					if (e && (e.status === 404)) {
-						staticserver.serveFile('404.html', 404, {}, request, response);
-					}
-				});
-			});
-		};
-		app.on('request', staticRequestHandler);
-		if (appssl) {
-			appssl.on('request', staticRequestHandler);
-		}
-	})();
-} catch (e) {
-	console.log('Could not start node-static - try `npm install` if you want to use it');
-}
-
-// SockJS server
-
-// This is the main server that handles users connecting to our server
-// and doing things on our server.
-
-var sockjs = require('sockjs');
-
-// Warning: Terrible hack here. The version of faye-websocket that we use has
-//          a bug where sometimes the _cursor of a StreamReader ends up being
-//          NaN, which leads to an infinite loop. The newest version of
-//          faye-websocket has *other* bugs, so this really is the least
-//          terrible option to deal with this critical issue.
-// (function() {
-// 	var StreamReader = require('./node_modules/sockjs/node_modules/' +
-// 			'faye-websocket/lib/faye/websocket/hybi_parser/stream_reader.js');
-// 	var _read = StreamReader.prototype.read;
-// 	StreamReader.prototype.read = function() {
-// 		if (isNaN(this._cursor)) {
-// 			// This will break out of the otherwise-infinite loop.
-// 			return null;
-// 		}
-// 		return _read.apply(this, arguments);
-// 	};
-// })();
-
-var server = sockjs.createServer({
-	sockjs_url: "//play.pokemonshowdown.com/js/lib/sockjs-0.3.min.js",
-	log: function(severity, message) {
-		if (severity === 'error') console.log('ERROR: '+message);
-	},
-	prefix: '/showdown',
-	websocket: !config.disablewebsocket
-});
-
-// Make `app`, `appssl`, and `server` available to the console.
-global.App = app;
-global.AppSSL = appssl;
-global.Server = server;
 
 /*********************************************************
  * Set up most of our globals
  *********************************************************/
+// Custom Globals
 
-/**
- * Converts anything to an ID. An ID must have only lowercase alphanumeric
- * characters.
- * If a string is passed, it will be converted to lowercase and
- * non-alphanumeric characters will be stripped.
- * If an object with an ID is passed, its ID will be returned.
- * Otherwise, an empty string will be returned.
- */
-global.toId = function(text) {
-	if (text && text.id) text = text.id;
-	else if (text && text.userid) text = text.userid;
+global.Server = {};
 
-	return string(text).toLowerCase().replace(/[^a-z0-9]+/g, '');
-};
-global.toUserid = toId;
+global.Server = require('./Server.js').Server;
 
-/**
- * Sanitizes a username or Pokemon nickname
- *
- * Returns the passed name, sanitized for safe use as a name in the PS
- * protocol.
- *
- * Such a string must uphold these guarantees:
- * - must not contain any ASCII whitespace character other than a space
- * - must not start or end with a space character
- * - must not contain any of: | , [ ]
- * - must not be the empty string
- *
- * If no such string can be found, returns the empty string. Calling
- * functions are expected to check for that condition and deal with it
- * accordingly.
- *
- * toName also enforces that there are not multiple space characters
- * in the name, although this is not strictly necessary for safety.
- */
-global.toName = function(name) {
-	name = string(name);
-	name = name.replace(/[\|\s\[\]\,]+/g, ' ').trim();
-	if (name.length > 18) name = name.substr(0,18).trim();
-	return name;
-};
+global.serverName = Config.serverName;
 
-/**
- * Escapes a string for HTML
- * If strEscape is true, escapes it for JavaScript, too
- */
-global.sanitize = function(str, strEscape) {
-	str = (''+(str||''));
-	str = str.escapeHTML();
-	if (strEscape) str = str.replace(/'/g, '\\\'');
-	return str;
-};
+// PS-Heroku Uses MongoDB To Store Custom-Plugins Data. Replace URL with your MongoDB Url.
+// Heroku provide FREE MongoDB, You can use it to store data or you can use MongoDB.com which also provide free MobgoDB Hosting.
 
-/**
- * Safely ensures the passed variable is a string
- * Simply doing ''+str can crash if str.toString crashes or isn't a function
- * If we're expecting a string and being given anything that isn't a string
- * or a number, it's safe to assume it's an error, and return ''
- */
-global.string = function(str) {
-	if (typeof str === 'string' || typeof str === 'number') return ''+str;
-	return '';
-}
+//global.Db = require('nef')(require('nef-mongo')('<URL'));
 
-/**
- * Converts any variable to an integer (numbers get floored, non-numbers
- * become 0). Then clamps it between min and (optionally) max.
- */
-global.clampIntRange = function(num, min, max) {
-	if (typeof num !== 'number') num = 0;
-	num = Math.floor(num);
-	if (num < min) num = min;
-	if (max !== undefined && num > max) num = max;
-	return num;
-};
+const nef = require('nef');
+const nefFs = require('nef-fs');
+global.Db = nef(nefFs('./config/Db'));
 
-global.LoginServer = require('./loginserver.js');
+// Sqlite3 Databse for REGIONS.
+global.sqlite3 = require('sqlite3');
 
-watchFile('./config/custom.css', function(curr, prev) {
-	LoginServer.request('invalidatecss', {}, function() {});
-});
-LoginServer.request('invalidatecss', {}, function() {});
+// Additional Database
+global.Ad = require('origindb')('./config/Ad');
+ 
+// Custom Globals End
 
-global.Users = require('./users.js');
+global.Dex = require('./sim/dex');
+global.toId = Dex.getId;
 
-global.Rooms = require('./rooms.js');
+global.LoginServer = require('./loginserver');
 
-delete process.send; // in case we're a child process
-global.Verifier = require('./verifier.js');
+global.Ladders = require('./ladders');
 
-global.CommandParser = require('./command-parser.js');
+global.Users = require('./users');
 
-global.Simulator = require('./simulator.js');
+global.Punishments = require('./punishments');
 
-try {
-	global.Dnsbl = require('./dnsbl.js');
-} catch (e) {
-	global.Dnsbl = {query:function(){}};
-}
+global.Chat = require('./chat');
 
-global.Cidr = require('./cidr.js');
+global.Rooms = require('./rooms');
 
-if (config.crashguard) {
+global.Ontime = {};
+
+global.Tells = require('./tells.js');
+
+global.Verifier = require('./verifier');
+Verifier.PM.spawn();
+
+global.Tournaments = require('./tournaments');
+
+global.Dnsbl = require('./dnsbl');
+Dnsbl.loadDatacenters();
+
+if (Config.crashguard) {
 	// graceful crash - allow current battles to finish before restarting
-	process.on('uncaughtException', (function() {
-		var lastCrash = 0;
-		return function(err) {
-			var dateNow = Date.now();
-			var quietCrash = require('./crashlogger.js')(err, 'The main process');
-			quietCrash = quietCrash || ((dateNow - lastCrash) <= 1000 * 60 * 5)
-			lastCrash = Date.now();
-			if (quietCrash) return;
-			var stack = (""+err.stack).split("\n").slice(0,2).join("<br />");
-			if (Rooms.lobby) {
-				Rooms.lobby.addRaw('<div class="broadcast-red"><b>THE SERVER HAS CRASHED:</b> '+stack+'<br />Please restart the server.</div>');
-				Rooms.lobby.addRaw('<div class="broadcast-red">You will not be able to talk in the lobby or start new battles until the server restarts.</div>');
-			}
-			config.modchat = 'crash';
-			Rooms.global.lockdown = true;
-		};
-	})());
+	process.on('uncaughtException', err => {
+		let crashType = require('./lib/crashlogger')(err, 'The main process');
+		if (crashType === 'lockdown') {
+			Rooms.global.startLockdown(err);
+		} else {
+			Rooms.global.reportCrash(err);
+		}
+	});
+	process.on('unhandledRejection', err => {
+		let crashType = require('./lib/crashlogger')(err, 'A main process Promise');
+		if (crashType === 'lockdown') {
+			Rooms.global.startLockdown(err);
+		} else {
+			Rooms.global.reportCrash(err);
+		}
+	});
 }
 
 /*********************************************************
- * Set up the server to be connected to
+ * Start networking processes to be connected to
  *********************************************************/
 
-// this is global so it can be hotpatched if necessary
-global.isTrustedProxyIp = Cidr.checker(config.proxyip);
+global.Sockets = require('./sockets');
 
-var socketCounter = 0;
-server.on('connection', function(socket) {
-	if (!socket) {
-		// For reasons that are not entirely clear, SockJS sometimes triggers
-		// this event with a null `socket` argument.
-		return;
-	} else if (!socket.remoteAddress) {
-		// This condition occurs several times per day. It may be a SockJS bug.
-		try {
-			socket.end();
-		} catch (e) {}
-		return;
-	}
-	socket.id = (++socketCounter);
+exports.listen = function (port, bindaddress, workerCount) {
+	Sockets.listen(port, bindaddress, workerCount);
+};
 
-	if (isTrustedProxyIp(socket.remoteAddress)) {
-		var ips = (socket.headers['x-forwarded-for'] || '').split(',');
-		var ip;
-		while (ip = ips.pop()) {
-			ip = ip.trim();
-			if (!isTrustedProxyIp(ip)) {
-				socket.remoteAddress = ip;
-				break;
-			}
-		}
-	}
-	// Emergency mode connections logging
-	if (config.emergency) {
-		fs.appendFile('logs/cons.emergency.log', '#'+socketCounter+' [' + socket.remoteAddress + ']\n', function(err){
-			if (err) {
-				console.log('!! Error in emergency conns log !!');
-				throw err;
-			}
-		});
-	}
-
-	if (ResourceMonitor.countConnection(socket.remoteAddress)) {
-		socket.end();
-		// After sending the FIN packet, we make sure the I/O is totally blocked for this socket
-		socket.destroy();
-		return;
-	}
-	var checkResult = Users.checkBanned(socket.remoteAddress);
-	if (!checkResult && Users.checkRangeBanned(socket.remoteAddress)) {
-		checkResult = '#ipban';
-	}
-	if (checkResult) {
-		console.log('CONNECT BLOCKED - IP BANNED: '+socket.remoteAddress+' ('+checkResult+')');
-		if (checkResult === '#ipban') {
-			socket.write("|popup|Your IP ("+socket.remoteAddress+") is on our abuse list and is permanently banned. If you are using a proxy, stop.");
-		} else {
-			socket.write("|popup|Your IP ("+socket.remoteAddress+") used is banned under the username '"+checkResult+"''. Your ban will expire in a few days."+(config.appealurl ? " Or you can appeal at:\n" + config.appealurl:""));
-		}
-		socket.end();
-		return;
-	}
-	// console.log('CONNECT: '+socket.remoteAddress+' ['+socket.id+']');
-	var interval;
-	if (config.herokuhack) {
-		// see https://github.com/sockjs/sockjs-node/issues/57#issuecomment-5242187
-		interval = setInterval(function() {
-			try {
-				socket._session.recv.didClose();
-			} catch (e) {}
-		}, 15000);
-	}
-
-	var connection;
-
-	socket.on('data', function(message) {
-		// Due to a bug in SockJS or Faye, if an exception propagates out of
-		// the `data` event handler, the user will be disconnected on the next
-		// `data` event. To prevent this, we log exceptions and prevent them
-		// from propagating out of this function.
-		try {
-			// drop legacy JSON messages
-			if (message.substr(0,1) === '{') return;
-
-			// drop invalid messages without a pipe character
-			var pipeIndex = message.indexOf('|');
-			if (pipeIndex < 0) return;
-
-			var roomid = message.substr(0, pipeIndex);
-			var lines = message.substr(pipeIndex + 1);
-			var room = Rooms.get(roomid);
-			if (!room) room = Rooms.lobby || Rooms.global;
-			var user = connection.user;
-			if (lines.substr(0,3) === '>> ' || lines.substr(0,4) === '>>> ') {
-				user.chat(lines, room, connection);
-				return;
-			}
-			lines = lines.split('\n');
-			// Emergency logging
-			if (config.emergency) {
-				fs.appendFile('logs/emergency.log', '['+ user + ' (' + socket.remoteAddress + ')] ' + message + '\n', function(err){
-					if (err) {
-						console.log('!! Error in emergency log !!');
-						throw err;
-					}
-				});
-			}
-			for (var i=0; i<lines.length; i++) {
-				if (user.chat(lines[i], room, connection) === false) break;
-			}
-		} catch (e) {
-			var stack = e.stack + '\n\n';
-			stack += 'Additional information:\n';
-			stack += 'user = ' + user + '\n';
-			stack += 'ip = ' + socket.remoteAddress + '\n';
-			stack += 'roomid = ' + roomid + '\n';
-			stack += 'message = ' + message;
-			var err = {stack: stack};
-			if (config.crashguard) {
-				try {
-					connection.sendTo(roomid||'lobby', '|html|<div class="broadcast-red"><b>Something crashed!</b><br />Don\'t worry, we\'re working on fixing it.</div>');
-				} catch (e) {} // don't crash again...
-				process.emit('uncaughtException', err);
-			} else {
-				throw err;
-			}
-		}
-	});
-
-	socket.on('close', function() {
-		if (interval) {
-			clearInterval(interval);
-		}
-		var user = connection.user;
-		if (!user) return;
-		user.onDisconnect(socket);
-	});
-
-	connection = Users.connectUser(socket);
-	Dnsbl.query(connection.ip, function(isBlocked) {
-		if (isBlocked) {
-			connection.popup("Your IP is known for abuse and has been locked. If you're using a proxy, don't.");
-			if (connection.user) connection.user.lock(true);
-		}
-	});
-});
-server.installHandlers(app, {});
-app.listen(config.port);
-if (appssl) {
-	server.installHandlers(appssl, {});
-	appssl.listen(config.ssl.port);
+if (require.main === module) {
+	// Launch the server directly when app.js is the main module. Otherwise,
+	// in the case of app.js being imported as a module (e.g. unit tests),
+	// postpone launching until app.listen() is called.
+	let port;
+	if (process.argv[2]) port = parseInt(process.argv[2]);
+	Sockets.listen(port);
 }
-
-console.log('Server started on port ' + config.port);
-if (appssl) {
-	console.log('SSL server started on port ' + config.ssl.port);
-}
-
-console.log('Test your server at http://localhost:' + config.port);
 
 /*********************************************************
  * Set up our last global
  *********************************************************/
 
-// This slow operation is done *after* we start listening for connections
-// to the server. Anybody who connects while this require() is running will
-// have to wait a couple seconds before they are able to join the server, but
-// at least they probably won't receive a connection error message.
-global.Tools = require('./tools.js');
+global.TeamValidatorAsync = require('./team-validator-async');
+TeamValidatorAsync.PM.spawn();
 
-// After loading tools, generate and cache the format list.
-Rooms.global.formatListText = Rooms.global.getFormatListText();
+/*********************************************************
+ * Start up the REPL server
+ *********************************************************/
 
-// load ipbans at our leisure
-fs.readFile('./config/ipbans.txt', function (err, data) {
-	if (err) return;
-	data = (''+data).split("\n");
-	var rangebans = [];
-	for (var i=0; i<data.length; i++) {
-		data[i] = data[i].split('#')[0].trim();
-		if (!data[i]) continue;
-		if (data[i].indexOf('/') >= 0) {
-			rangebans.push(data[i]);
-		} else if (!Users.bannedIps[data[i]]) {
-			Users.bannedIps[data[i]] = '#ipban';
-		}
-	}
-	Users.checkRangeBanned = Cidr.checker(rangebans);
-});
+require('./lib/repl').start('app', cmd => eval(cmd));
